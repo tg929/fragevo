@@ -1,0 +1,198 @@
+{
+  "paths": {
+    "project_root": ".",
+    "mgltools_path": "mgltools_x86_64Linux2_1.5.6"
+  },
+  "workflow": {
+    "output_directory": "FragEvo_output_rag",
+    "max_generations": 10,
+    "initial_population_file": "datasets/initial_population/my_initial_population.smi"
+  },
+  "gpt": {
+    "seed": 42,
+    "device": "0",
+    "visible_devices": [
+      0
+    ],
+    "temperature": 1.0,
+    "n_fragments_to_mask": 1,
+    "dynamic_masking": {
+      "enable": true,
+      "initial_mask_fragments": 3,
+      "final_mask_fragments": 1
+    },
+    "model_settings": {
+      "max_seq_len": 1024,
+      "top_k": null,
+      "stream": false,
+      "rp": 1.0,
+      "kv_cache": true,
+      "is_simulation": true
+    }
+  },
+  "selection": {
+    "selection_mode": "rag_score",
+    "rag_score_settings": {
+      "n_select": 100,
+      "normalization": {
+        "ds_clip_min": -20.0,
+        "ds_clip_max": 0.0,
+        "sa_max_value": 10.0,
+        "sa_denominator": 9.0
+      },
+      "elitism": {
+        "enable": true,
+        "dock_top_k": 5
+      },
+      "novelty_filter": {
+        "enable": false,
+        "similarity_threshold": 0.4,
+        "qed_min": 0.5,
+        "sa_max": 5.0,
+        "ds_active_median": -7.5,
+        "reference_smiles_file": "datasets/initial_population/my_initial_population.smi",
+        "fp_type": "morgan",
+        "fp_radius": 2,
+        "fp_nbits": 2048
+      },
+      "write_stats": true
+    }
+  },
+  "receptors": {
+    "description": "Receptor configuration (PDBQT + docking box).",
+    "default_receptor": {
+      "name": "parp1",
+      "description": "PARP1 receptor (default).",
+      "file": "tutorial/parp1.pdbqt",
+      "center_x": 26.413,
+      "center_y": 11.282,
+      "center_z": 27.238,
+      "size_x": 18.521,
+      "size_y": 17.479,
+      "size_z": 19.995
+    },
+    "target_list": {
+      "parp1": {
+        "name": "parp1",
+        "description": "PARP1 receptor",
+        "file": "tutorial/parp1.pdbqt",
+        "center_x": 26.413,
+        "center_y": 11.282,
+        "center_z": 27.238,
+        "size_x": 18.521,
+        "size_y": 17.479,
+        "size_z": 19.995
+      },
+      "fa7": {
+        "name": "fa7",
+        "description": "FA7 receptor",
+        "file": "tutorial/fa7.pdbqt",
+        "center_x": 10.131,
+        "center_y": 41.879,
+        "center_z": 32.097,
+        "size_x": 20.673,
+        "size_y": 20.198,
+        "size_z": 21.362
+      },
+      "5ht1b": {
+        "name": "5ht1b",
+        "description": "5HT1B receptor",
+        "file": "tutorial/5ht1b.pdbqt",
+        "center_x": -26.602,
+        "center_y": 5.277,
+        "center_z": 17.898,
+        "size_x": 22.5,
+        "size_y": 22.5,
+        "size_z": 22.5
+      },
+      "braf": {
+        "name": "braf",
+        "description": "BRAF receptor",
+        "file": "tutorial/braf.pdbqt",
+        "center_x": 84.194,
+        "center_y": 6.949,
+        "center_z": -7.081,
+        "size_x": 22.032,
+        "size_y": 19.211,
+        "size_z": 14.106
+      },
+      "jak2": {
+        "name": "jak2",
+        "description": "JAK2 receptor",
+        "file": "tutorial/jak2.pdbqt",
+        "center_x": 114.758,
+        "center_y": 65.496,
+        "center_z": 11.345,
+        "size_x": 19.033,
+        "size_y": 17.929,
+        "size_z": 20.283
+      }
+    }
+  },
+  "docking": {
+    "dock_choice": "QVinaDocking",
+    "conversion_choice": "MGLToolsConversion",
+    "docking_exhaustiveness": 3,
+    "docking_num_modes": 10,
+    "seed": 42,
+    "number_of_processors": null,
+    "max_variants_per_compound": 3,
+    "gypsum_thoroughness": 3,
+    "gypsum_timeout_limit": 120,
+    "min_ph": 6.4,
+    "max_ph": 8.4,
+    "pka_precision": 1.0,
+    "debug_mode": false,
+    "mgltools_dir": "mgltools_x86_64Linux2_1.5.6",
+    "mgl_python": "mgltools_x86_64Linux2_1.5.6/bin/pythonsh",
+    "prepare_receptor4.py": "mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py",
+    "prepare_ligand4.py": "mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py",
+    "docking_executable": "autogrow/docking/docking_executables/q_vina_2/q_vina_2_1_linux/qvina02",
+    "timeout_vs_gtimeout": "timeout",
+    "qvina_settings": {
+      "timeout_gen3d": 30,
+      "timeout_dock": 100,
+      "num_cpu_dock": 32,
+      "use_receptor_from_config": true
+    }
+  },
+  "crossover_finetune": {
+    "crossover_attempts": 50,
+    "min_atom_match_mcs": 4,
+    "max_time_mcs_prescreen": 1,
+    "max_time_mcs_thorough": 1,
+    "protanate_step": true,
+    "max_attempts_multiplier": 10,
+    "merge_attempts": 3
+  },
+  "mutation_finetune": {
+    "mutation_attempts": 50,
+    "max_mutations_per_parent": 2,
+    "rxn_library": "all_rxns",
+    "max_attempts_multiplier": 50,
+    "max_consecutive_failures_multiplier": 2,
+    "enable_progress_bar": true,
+    "rxn_library_file": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_rxn_library.json",
+    "function_group_library": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_functional_groups.json",
+    "complementary_mol_directory": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/complementary_mol_dir"
+  },
+  "filter": {
+    "enable_lipinski_strict": false,
+    "enable_lipinski_lenient": true,
+    "enable_ghose": false,
+    "enable_ghose_modified": false,
+    "enable_mozziconacci": false,
+    "enable_vande_waterbeemd": false,
+    "enable_pains": false,
+    "enable_nih": false,
+    "enable_brenk": false,
+    "no_filters": false,
+    "alternative_filters": null
+  },
+  "performance": {
+    "parallel_processing": true,
+    "max_workers": -1,
+    "number_of_processors": -1,
+    "cleanup_intermediate_files": true
+  }
+}

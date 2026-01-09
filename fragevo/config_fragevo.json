@@ -1,0 +1,250 @@
+{
+  "description": "FragEvo配置文件",
+  "paths": {
+    "project_root": ".",
+    "description": "项目根目录路径"
+  },
+  "workflow": {
+    "description": "FragEvo混合工作流核心参数",
+    "seed": 42,
+    "max_generations": 10,
+    "initial_population_file": "datasets/initial_population/my_initial_population.smi",
+    "output_directory": "FragEvo_output"
+  },
+  "gpt": {
+    "n_fragments_to_mask": 1,
+    "seed": 42,
+    "dynamic_masking": {
+      "enable": true
+    }
+  },
+  "receptors": {
+    "description": "受体配置，支持多个对接目标",
+    "default_receptor": {
+      "name": "parp1",
+      "description": "The primary default PARP1 receptor for initial runs.",
+      "file": "tutorial/PARP/4r6eA_PARP1_prepared.pdb",
+      "center_x": -70.76,
+      "center_y": 21.82,
+      "center_z": 28.33,
+      "size_x": 25.0,
+      "size_y": 16.0,
+      "size_z": 25.0
+    },
+    "target_list": {
+      "parp1": {
+        "name": "parp1",
+        "description": "The primary default PARP1 receptor for initial runs.",
+        "file": "tutorial/PARP/4r6eA_PARP1_prepared.pdb",
+        "center_x": -70.76,
+        "center_y": 21.82,
+        "center_z": 28.33,
+        "size_x": 25.0,
+        "size_y": 16.0,
+        "size_z": 25.0
+      },
+      "4r6e": {
+        "name": "4r6e",
+        "description": "4r6e receptor",
+        "file": "pdb/4r6e.pdb",
+        "center_x": -70.76,
+        "center_y": 21.82,
+        "center_z": 28.33,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "3pbl": {
+        "name": "3pbl",
+        "description": "3pbl receptor",
+        "file": "pdb/3pbl.pdb",
+        "center_x": 9.0,
+        "center_y": 22.5,
+        "center_z": 26.0,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "1iep": {
+        "name": "1iep",
+        "description": "1iep receptor",
+        "file": "pdb/1iep.pdb",
+        "center_x": 15.6138918,
+        "center_y": 53.38013513,
+        "center_z": 15.454837,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "2rgp": {
+        "name": "2rgp",
+        "description": "2rgp receptor",
+        "file": "pdb/2rgp.pdb",
+        "center_x": 16.29212,
+        "center_y": 34.870814,
+        "center_z": 92.0353,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "3eml": {
+        "name": "3eml",
+        "description": "3eml receptor",
+        "file": "pdb/3eml.pdb",
+        "center_x": -9.06363,
+        "center_y": -7.14446,
+        "center_z": 55.86259999,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "3ny8": {
+        "name": "3ny8",
+        "description": "3ny8 receptor",
+        "file": "pdb/3ny8.pdb",
+        "center_x": 2.2488,
+        "center_y": 4.68495,
+        "center_z": 51.382000000001,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "4rlu": {
+        "name": "4rlu",
+        "description": "4rlu receptor",
+        "file": "pdb/4rlu.pdb",
+        "center_x": -0.73599,
+        "center_y": 22.75547,
+        "center_z": -31.23689,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "4unn": {
+        "name": "4unn",
+        "description": "4unn receptor",
+        "file": "pdb/4unn.pdb",
+        "center_x": 5.68434153,
+        "center_y": 18.1917,
+        "center_z": -7.3715,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "5mo4": {
+        "name": "5mo4",
+        "description": "5mo4 receptor",
+        "file": "pdb/5mo4.pdb",
+        "center_x": -44.901,
+        "center_y": 20.490354,
+        "center_z": 8.48335,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      },
+      "7l11": {
+        "name": "7l11",
+        "description": "7l11 receptor",
+        "file": "pdb/7l11.pdb",
+        "center_x": -21.81481,
+        "center_y": -4.21606,
+        "center_z": -27.98378,
+        "size_x": 15.0,
+        "size_y": 15.0,
+        "size_z": 15.0
+      }
+    }
+  },
+  "docking": {
+    "description": "分子对接参数配置",
+    "dock_choice": "VinaDocking",
+    "conversion_choice": "MGLToolsConversion",
+    "docking_exhaustiveness": 20,
+    "docking_num_modes": 12,
+    "seed": 42,
+    "number_of_processors": null,
+    "max_variants_per_compound": 3,
+    "gypsum_thoroughness": 3,
+    "gypsum_timeout_limit": 120,
+    "min_ph": 6.4,
+    "max_ph": 8.4,
+    "pka_precision": 1.0,
+    "debug_mode": false,
+    "mgltools_dir": "mgltools_x86_64Linux2_1.5.6",
+    "mgl_python": "mgltools_x86_64Linux2_1.5.6/bin/pythonsh",
+    "prepare_receptor4.py": "mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py",
+    "prepare_ligand4.py": "mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py",
+    "docking_executable": "autogrow/docking/docking_executables/vina/autodock_vina_1_1_2_linux_x86/bin/vina",
+    "timeout_vs_gtimeout": "timeout"
+  },
+  "crossover_finetune": {
+    "description": "GA交叉操作参数",
+    "number_of_crossovers": 100,
+    "min_atom_match_mcs": 4,
+    "max_time_mcs_prescreen": 1,
+    "max_time_mcs_thorough": 1,
+    "protanate_step": true
+  },
+  "mutation_finetune": {
+    "description": "GA突变操作参数",
+    "number_of_mutants": 100,
+    "rxn_library": "all_rxns",
+    "rxn_library_file": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_rxn_library.json",
+    "function_group_library": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_functional_groups.json",
+    "complementary_mol_directory": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/complementary_mol_dir"
+  },
+  "filter": {
+    "description": "分子过滤参数",
+    "enable_lipinski_strict": false,
+    "enable_lipinski_lenient": true,
+    "enable_ghose": false,
+    "enable_ghose_modified": false,
+    "enable_mozziconacci": false,
+    "enable_vande_waterbeemd": false,
+    "enable_pains": false,
+    "enable_nih": false,
+    "enable_brenk": false,
+    "no_filters": false,
+    "alternative_filters": null
+  },
+  "selection": {
+    "description": "Central configuration for all molecular selection strategies.",
+    "selection_mode": "multi_objective",
+    "single_objective_settings": {
+      "description": "Parameters for single-objective selection based on docking score.",
+      "n_select": 100,
+      "selector_choice": "Rank_Selector",
+      "tourn_size": 0.1
+    },
+    "multi_objective_settings": {
+      "description": "Parameters for multi-objective molecular selection using NSGA-II.",
+      "n_select": 100,
+      "objectives": [
+        {
+          "name": "docking_score",
+          "direction": "minimize"
+        },
+        {
+          "name": "qed_score",
+          "direction": "maximize"
+        },
+        {
+          "name": "sa_score",
+          "direction": "minimize"
+        }
+      ],
+      "enhanced_strategy": "standard",
+      "enable_crowding_distance": true,
+      "verbose": false
+    }
+  },
+  "performance": {
+    "description": "性能优化参数",
+    "parallel_processing": true,
+    "max_workers": 1,
+    "number_of_processors": -1,
+    "batch_size": 32,
+    "memory_optimization": true,
+    "cleanup_intermediate_files": false
+  }
+}

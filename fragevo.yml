@@ -1,0 +1,43 @@
+name: fragevo
+channels:
+  - conda-forge  # 建议将 conda-forge 放在最前面，它的包更全更新
+  - defaults
+dependencies:
+  # 1. 指定你需要的 Python 版本（只指定主版本和次版本）
+  - python=3.9
+
+  # 2. 列出主要的科学计算包，让 Conda 来安装
+  # 您 pip 列表中的很多包都可以在 conda-forge 中找到
+  - openbabel
+  - pyarrow
+  - pandas
+  - numpy
+  - scikit-learn
+  - rdkit
+  - h5py
+  - matplotlib
+  - seaborn
+  - jupyterlab
+  - wandb
+  - pytorch         # PyTorch 官方推荐在 Conda 中安装
+  - transformers    # Hugging Face 的核心库
+  - accelerate
+  - datasets
+  - tokenizers
+
+  # 3. 为那些 Conda 中没有的包添加 pip 部分
+  - pip
+  - pip:
+    - about-time
+    - alive-progress
+    - anndata
+    - cellxgene-census
+    - datamol
+    - evaluate
+    - gget
+    - pytdc  # 这个包似乎只在 PyPI 上有
+    - selfies
+    - safe-mol
+    - scanpy
+    - tiledbsoma
+    # 如果还有其他只能用 pip 安装的包，请加在这里
