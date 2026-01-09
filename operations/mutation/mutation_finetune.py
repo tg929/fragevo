@@ -176,7 +176,7 @@ def run_mutation_simple(config: Dict, parent_smiles: List[str], additional_smile
     return results, executor.lineage_records
 
 def main():
-    parser = argparse.ArgumentParser(description='分子变异操作')
+    parser = argparse.ArgumentParser(description='分子变异操作 (finetune)')
     parser.add_argument('--smiles_file', type=str, required=True, help='输入SMILES文件路径')
     parser.add_argument('--output_file', type=str, required=True, help='输出SMILES文件路径')
     parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='配置文件路径')

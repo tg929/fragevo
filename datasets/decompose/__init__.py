@@ -7,6 +7,6 @@
 包含用于分子分解和片段处理的工具
 """
 
-from .demo_frags import batch_process
+from .frags import batch_process
 
 __all__ = ['batch_process'] 

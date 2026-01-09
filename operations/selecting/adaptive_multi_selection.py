@@ -132,7 +132,7 @@ def adaptive_multi_objective_selection(molecules_data: List[Dict], n_select: int
     ])
     
     # 执行NSGA-II选择
-    from operations.selecting.selecting_multi_demo import non_dominated_sort, crowding_distance
+    from operations.selecting.selecting_multi import non_dominated_sort, crowding_distance
     fronts = non_dominated_sort(objectives)
     
     selected_molecules = []
@@ -160,7 +160,7 @@ def load_molecules_with_scores_and_deduplicate(parent_file: str, docked_file: st
     """
     加载并合并父代和子代分子数据，自动去重
     """
-    from operations.selecting.selecting_multi_demo import load_molecules_with_scores
+    from operations.selecting.selecting_multi import load_molecules_with_scores
     
     # 加载父代分子
     parent_molecules = load_molecules_with_scores(parent_file)
@@ -198,7 +198,7 @@ def load_molecules_with_scores_and_deduplicate(parent_file: str, docked_file: st
 
 def main():
     import argparse
-    from operations.selecting.selecting_multi_demo import add_additional_scores, save_selected_molecules_with_scores, print_selection_statistics
+    from operations.selecting.selecting_multi import add_additional_scores, save_selected_molecules_with_scores, print_selection_statistics
     
     parser = argparse.ArgumentParser(description="自适应多目标分子选择")
     parser.add_argument('--docked_file', type=str, required=True, help='子代对接结果文件')

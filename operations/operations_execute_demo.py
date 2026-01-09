@@ -198,7 +198,7 @@ class GAWorkflowExecutor:
         ]
         if self.receptor_name:
             docking_args.extend(['--receptor', self.receptor_name])            
-        docking_succeeded = self._run_script('operations/docking/docking_demo_finetune.py', docking_args)        
+        docking_succeeded = self._run_script('operations/docking/docking_finetune.py', docking_args)        
         docked_count = self._count_molecules(str(initial_docked_file))
         if not docking_succeeded or docked_count == 0:
             logger.error("初代种群对接失败或未生成任何有效对接结果。请检查对接模块配置和日志。")
@@ -220,12 +220,12 @@ class GAWorkflowExecutor:
         # 1. 交叉操作
         crossover_raw_file = gen_dir / "crossover_raw.smi"#交叉原始文件（生成）
         crossover_filtered_file = gen_dir / "crossover_filtered.smi"        
-        crossover_succeeded = self._run_script('operations/crossover/crossover_demo_finetune.py', [
+        crossover_succeeded = self._run_script('operations/crossover/crossover_finetune.py', [
             '--smiles_file', parent_file,
             '--output_file', str(crossover_raw_file)
         ])        
         # 过滤交叉结果
-        filter_crossover_succeeded = self._run_script('operations/filter/filter_demo.py', [
+        filter_crossover_succeeded = self._run_script('operations/filter/filter.py', [
             '--smiles_file', str(crossover_raw_file),
             '--output_file', str(crossover_filtered_file)
         ])
@@ -240,12 +240,12 @@ class GAWorkflowExecutor:
         mutation_raw_file = gen_dir / "mutation_raw.smi"#突变原始文件（生成）
         mutation_filtered_file = gen_dir / "mutation_filtered.smi"
         
-        mutation_succeeded = self._run_script('operations/mutation/mutation_demo_finetune.py', [
+        mutation_succeeded = self._run_script('operations/mutation/mutation_finetune.py', [
             '--smiles_file', parent_file,
             '--output_file', str(mutation_raw_file)
         ])        
         # 过滤突变结果
-        filter_mutation_succeeded = self._run_script('operations/filter/filter_demo.py', [
+        filter_mutation_succeeded = self._run_script('operations/filter/filter.py', [
             '--smiles_file', str(mutation_raw_file),
             '--output_file', str(mutation_filtered_file)
         ])
@@ -297,7 +297,7 @@ class GAWorkflowExecutor:
         ]
         if self.receptor_name:
             docking_args.extend(['--receptor', self.receptor_name])            
-        docking_succeeded = self._run_script('operations/docking/docking_demo_finetune.py', docking_args)
+        docking_succeeded = self._run_script('operations/docking/docking_finetune.py', docking_args)
         
         docked_count = self._count_molecules(str(offspring_docked_file))
         if not docking_succeeded or docked_count == 0:
@@ -335,7 +335,7 @@ class GAWorkflowExecutor:
             ]            
             selection_succeeded = self._run_script('operations/selecting/molecular_selection.py', selection_args)            
         elif selection_mode == 'multi_objective':
-            # 多目标选择：使用selecting_multi_demo.py            
+            # 多目标选择：使用selecting_multi.py            
             multi_obj_config = selection_config.get('multi_objective_settings', {})
             n_select = multi_obj_config.get('n_select', 100)            
             selection_args = [
@@ -347,7 +347,7 @@ class GAWorkflowExecutor:
             ]            
             if multi_obj_config.get('verbose', False):
                 selection_args.append('--verbose')            
-            selection_succeeded = self._run_script('operations/selecting/selecting_multi_demo.py', selection_args)            
+            selection_succeeded = self._run_script('operations/selecting/selecting_multi.py', selection_args)            
         else:
             logger.error(f"不支持的选择模式: {selection_mode}")
             return None        
@@ -371,7 +371,7 @@ class GAWorkflowExecutor:
         gen_dir = self.output_dir / f"generation_{generation}"
         scoring_report_file = gen_dir / f"generation_{generation}_evaluation.txt"
         
-        scoring_succeeded = self._run_script('operations/scoring/scoring_demo.py', [
+        scoring_succeeded = self._run_script('operations/scoring/scoring.py', [
             '--current_population_docked_file', str(selected_parents_file),
             '--initial_population_file', self.initial_population_file,
             '--output_file', str(scoring_report_file)

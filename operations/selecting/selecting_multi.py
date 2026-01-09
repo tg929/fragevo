@@ -374,7 +374,7 @@ def main():
     enhanced_strategy = (multi_cfg.get("enhanced_strategy") or "standard").strip().lower()
 
     if enhanced_strategy not in ("standard", "nsga2"):
-        logger.warning(f"当前 selecting_multi_demo.py 未实现 enhanced_strategy='{enhanced_strategy}'，将回退到标准NSGA-II。")
+        logger.warning(f"当前 selecting_multi.py 未实现 enhanced_strategy='{enhanced_strategy}'，将回退到标准NSGA-II。")
 
     cache_path = args.cache_file
     if not cache_path:

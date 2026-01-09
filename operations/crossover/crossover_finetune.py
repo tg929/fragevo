@@ -18,7 +18,7 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    return logging.getLogger("crossover")
+    return logging.getLogger("crossover_finetune")
 def main():
     parser = argparse.ArgumentParser(description='改进的GA交叉参数')
     parser.add_argument("--smiles_file", "-s", type=str, required=True,
@@ -107,10 +107,10 @@ def main():
             if ligand_new_smiles is None:
                 continue
 
-            # 必要去重1：交叉产物不能回到输入池(父代/GPT池)，否则浪费评估预算
+            # 去重1：交叉产物不能回到输入池(父代/GPT池)，否则浪费评估预算
             if ligand_new_smiles in input_smiles_set:
                 continue
-            # 必要去重2：交叉产物不能与本轮已生成交叉产物重复
+            # 去重2：交叉产物不能与本轮已生成交叉产物重复
             if ligand_new_smiles in crossed_population_set:
                 continue
 

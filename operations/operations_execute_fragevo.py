@@ -27,7 +27,7 @@ from operations.stating.config_snapshot_generator import save_config_snapshot #�
 import multiprocessing  
 import shutil  
 from rdkit import Chem
-from datasets.decompose.demo_frags import break_into_fragments
+from datasets.decompose.frags import break_into_fragments
 from utils.chem_metrics import ChemMetricCache
 
 # 移除全局日志配置，避免多进程日志冲突
@@ -39,7 +39,7 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/FragEvo/operations/operations_execute_fragevo_demo.py  .resolve()：将相对路径转换为绝对路径 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/FragEvo/operations/operations_execute_fragevo.py  .resolve()：将相对路径转换为绝对路径 
                                                              #整个项目地址：/data1/ytg/medium_models/FragEvo
 sys.path.insert(0, str(PROJECT_ROOT))#0：添加目录到搜索列表最前面
 
@@ -789,7 +789,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             return False, None
 
         # 运行过滤器
-        filter_succeeded = self._run_script('operations/filter/filter_demo.py', [
+        filter_succeeded = self._run_script('operations/filter/filter.py', [
             '--smiles_file', str(raw_output_file),
             '--output_file', str(filtered_output_file)
         ])
@@ -860,7 +860,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 '--mask_fragments', str(n_mask)
             ]
         
-        if not self._run_script('datasets/decompose/demo_frags.py', decompose_args):
+        if not self._run_script('datasets/decompose/frags.py', decompose_args):
             logger.error(f"第 {generation} 代: 分解和掩码失败。")
             return None        
         
@@ -971,7 +971,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         # 执行交叉操作
         logger.info(f"第 {generation} 代: 开始交叉操作...")
         crossover_ok, crossover_lineage_path = self._execute_ga_stage(
-            "交叉", 'operations/crossover/crossover_demo_finetune.py',
+            "交叉", 'operations/crossover/crossover_finetune.py',
             str(ga_input_pool_file), crossover_raw_file, crossover_filtered_file,
             crossover_raw_lineage, crossover_filtered_lineage
         )
@@ -983,7 +983,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         # 执行变异操作
         logger.info(f"第 {generation} 代: 开始变异操作...")
         mutation_ok, mutation_lineage_path = self._execute_ga_stage(
-            "突变", 'operations/mutation/mutation_demo_finetune.py',
+            "突变", 'operations/mutation/mutation_finetune.py',
             str(ga_input_pool_file), mutation_raw_file, mutation_filtered_file,
             mutation_raw_lineage, mutation_filtered_lineage
         )
@@ -1085,7 +1085,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if num_processors is not None:
             docking_args.extend(['--number_of_processors', str(num_processors)])
             
-        if not self._run_script('operations/docking/docking_demo_finetune.py', docking_args):
+        if not self._run_script('operations/docking/docking_finetune.py', docking_args):
             logger.error(f"第 {generation} 代: 子代对接失败。")
             return None
 
@@ -1212,7 +1212,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 '--cache_file', str(self.metric_cache.cache_path),
                 '--output_format', 'with_scores',
             ]
-            selection_succeeded = self._run_script('operations/selecting/selecting_multi_demo.py', selection_args)
+            selection_succeeded = self._run_script('operations/selecting/selecting_multi.py', selection_args)
         
         else:
             logger.error(f"不支持的选择模式: {selection_mode}")
@@ -1241,7 +1241,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         gen_dir = self.output_dir / f"generation_{generation}"
         scoring_report_file = gen_dir / f"generation_{generation}_evaluation.txt"
         
-        scoring_succeeded = self._run_script('operations/scoring/scoring_demo.py', [
+        scoring_succeeded = self._run_script('operations/scoring/scoring.py', [
             '--current_population_docked_file', str(selected_parents_file),
             '--initial_population_file', self.initial_population_file,
             '--output_file', str(scoring_report_file)
@@ -1332,7 +1332,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if num_processors is not None:
             docking_args.extend(['--number_of_processors', str(num_processors)])
 
-        docking_succeeded = self._run_script('operations/docking/docking_demo_finetune.py', docking_args)
+        docking_succeeded = self._run_script('operations/docking/docking_finetune.py', docking_args)
         
         docked_count = self._count_molecules(str(initial_docked_file))
         if not docking_succeeded or docked_count == 0:

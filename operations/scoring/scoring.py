@@ -1,4 +1,4 @@
-#我需要对比的的指标计算
+# 指标计算（对比/分析）
 import argparse
 import os
 import numpy as np

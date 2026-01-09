@@ -8,7 +8,7 @@
     "description": "FragEvo混合工作流核心参数",
     "seed": 42,
     "max_generations": 25,
-    "initial_population_file": "the/path/to/your_initial_population.smi",
+    "initial_population_file": "datasets/initial_population/initial_population.smi",
     "output_directory": "FragEvo_output"
   },
   "gpt": {
