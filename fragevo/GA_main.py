@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 # 从重构后的执行器模块中导入核心类
-from operations.operations_execute_demo import GAWorkflowExecutor
+from operations.operations_execute_GA import GAWorkflowExecutor
 def main():
     """主函数:解析参数并启动GA工作流"""
     parser = argparse.ArgumentParser(description='GA分子优化流程主入口')

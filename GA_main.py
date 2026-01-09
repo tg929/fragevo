@@ -30,7 +30,7 @@ PROJECT_ROOT = Path(__file__).parent
 sys.path.append(str(PROJECT_ROOT))
 
 # 从重构后的执行器模块中导入核心类
-from operations.operations_execute_demo import GAWorkflowExecutor
+from operations.operations_execute_GA import GAWorkflowExecutor
 
 def main():
     """主函数:解析参数并启动GA工作流"""
