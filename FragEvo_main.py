@@ -146,7 +146,7 @@ def main() -> None:
         logger.critical("No receptors selected to run.")
         raise SystemExit(1)
 
-    receptors_to_log = [name or "default" for name in receptors_to_run]
+    receptors_to_log = [name or "default" f、or name in receptors_to_run]
     logger.info("Receptors to run: %s", receptors_to_log)
 
     performance_config = config.get('performance', {})

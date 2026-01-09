@@ -7,8 +7,8 @@
   "workflow": {
     "description": "FragEvo混合工作流核心参数",
     "seed": 42,
-    "max_generations": 10,
-    "initial_population_file": "datasets/initial_population/my_initial_population.smi",
+    "max_generations": 25,
+    "initial_population_file": "the/path/to/your_initial_population.smi",
     "output_directory": "FragEvo_output"
   },
   "gpt": {
@@ -209,7 +209,7 @@
   },
   "selection": {
     "description": "Central configuration for all molecular selection strategies.",
-    "selection_mode": "multi_objective",
+    "selection_mode": "single_objective",
     "single_objective_settings": {
       "description": "Parameters for single-objective selection based on docking score.",
       "n_select": 100,

@@ -36,6 +36,16 @@ cd ..
 chmod +x your/path/to/autodock_vina_1_1_2_linux_x86/bin/vina
 ```
 
+### AutoGrow (FragEvo fork)
+Fork of AutoGrow4.0 with minor modifications for FragEvo (GA operators + docking pipeline):
+```bash
+git clone https://github.com/tg929/autogrow.git autogrow
+```
+Place `autogrow/` under the project root directory.
+
+### Initial population
+The initial population is under `datasets/initial_population/`. You can also provide your own initial population file and set its path in `fragevo/config_fragevo.json` (`workflow.initial_population_file`).
+
 ### FragMLM pre-trained weighted
 <u><a href="https://drive.google.com/drive/folders/1BWxy8PBHk6zTSI1bTdrp-G2fS82uhT_B">Click here to download the weight files</a></u>
 
@@ -60,4 +70,3 @@ To set : ./fragevo/congfig_fragevo.json/ "selection_mode": "multi_objective".
 ```bash
 python FragEvo_rag.py --config fragevo/config_fragevo_rag.json --all_receptors --output_dir FragEvo_output_rag
 ```
-
