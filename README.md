@@ -25,6 +25,7 @@ conda activate fragevo
 ```
 #### Docking toolchain
 - MGLTools:([MGLTools downloads](https://ccsb.scripps.edu/mgltools/downloads/))
+Place/extract MGLTools under the project root (e.g. `./mgltools_x86_64Linux2_1.5.6/`).
 ```bash
 tar -zxvf <mgltools-*.tar.gz>
 cd mgltools_x86_64Linux2_1.5.6
@@ -32,8 +33,9 @@ cd mgltools_x86_64Linux2_1.5.6
 cd ..
 ```
 - AutoDock Vina ([autodock vina downloads](https://autodock-vina.readthedocs.io/en/latest/index.html/))/ QVina2 ([qvina2downloads](https://openbabel.org/docs/Installation/install.html#))
+Place the docking executable under the project root, or use the bundled executables from the AutoGrow fork: `./autogrow/docking/docking_executables/`.
 ```bash
-chmod +x your/path/to/autodock_vina_1_1_2_linux_x86/bin/vina
+chmod +x ./autodock_vina_*/bin/vina
 ```
 
 ### AutoGrow (FragEvo fork)
