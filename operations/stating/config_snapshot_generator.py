@@ -305,10 +305,10 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='配置参数快照生成器')
-    parser.add_argument('--config', type=str, required=True, help='原始配置文件路径')
-    parser.add_argument('--output', type=str, required=True, help='输出快照文件路径')
+    parser.add_argument('--config', type=str, required=True, help='--config')
+    parser.add_argument('--output', type=str, required=True, help='--output')
     parser.add_argument('--selection_mode', type=str, default='multi_objective', 
-                       help='实际使用的选择模式')
+                       help='--selection_mode')
     
     args = parser.parse_args()
     

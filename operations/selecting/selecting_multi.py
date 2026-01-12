@@ -333,29 +333,29 @@ def print_selection_statistics(selected_molecules):
     print(f"SA分数 - 最优: {min(sa_scores):.4f}, 平均: {np.mean(sa_scores):.4f}")
     print("="*40)
 def main():
-    parser = argparse.ArgumentParser(description='基于NSGA-II的多目标分子选择')    
+    parser = argparse.ArgumentParser(description='NSGA-II-multi_objective_selection')    
     # 输入输出参数
     parser.add_argument('--docked_file', type=str, required=True,
-                       help='子代对接结果文件路径（格式: SMILES score)')
+                       help='--docked_file')
     parser.add_argument('--parent_file', type=str, required=False,
-                       help='父代文件路径（格式: SMILES score)')
+                       help='--parent_file')
     parser.add_argument('--output_file', type=str, required=True,
-                       help='输出的下一代父代文件路径')    
+                       help='--output_file')    
     # 选择参数
     parser.add_argument('--n_select', type=int, required=False,
-                       help='要选择的分子数量（不指定则从配置文件读取）')
+                       help='--n_select')
     # 输出格式选择
     parser.add_argument('--output_format', type=str, choices=['smiles_only', 'with_scores'], 
                        default='with_scores',
-                       help='输出格式:仅SMILES或包含分数 (默认: with_scores)')
+                       help='--output_format')
     
     # 其他参数
     parser.add_argument('--config_file', type=str, default=None,
-                       help='配置文件路径（读取 multi_objective_settings）')
+                       help='--config_file')
     parser.add_argument('--cache_file', type=str, default=None,
-                       help='(可选) 化学指标缓存文件路径')
+                       help='--cache_file')
     parser.add_argument('--verbose', action='store_true', default=False,
-                       help='显示详细信息')    
+                       help='--verbose')    
     args = parser.parse_args()    
 
     logger.info("开始基于NSGA-II的多目标分子选择...")

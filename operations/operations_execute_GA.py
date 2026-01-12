@@ -143,6 +143,9 @@ class GAWorkflowExecutor:
             
             logger.info(f"去重完成: {len(unique_smiles_list)} 个独特分子保存到 {output_file} (已添加ID)")
             return len(unique_smiles_list)
+        except Exception as e:
+            logger.error(f"去重失败: {e}", exc_info=True)
+            return 0
     
     def _combine_files(self, file_list: List[str], output_file: str) -> bool:
         """合并多个文件"""
@@ -155,6 +158,9 @@ class GAWorkflowExecutor:
                             if line:
                                 outf.write(line + '\n')
             return True
+        except Exception as e:
+            logger.error(f"合并文件失败: {e}", exc_info=True)
+            return False
     
     def _extract_smiles_from_docked_file(self, docked_file: str, output_smiles_file: str) -> bool:#提取分数       
         try:
@@ -169,6 +175,9 @@ class GAWorkflowExecutor:
             extracted_count = self._count_molecules(output_smiles_file)
             logger.debug(f"从 {docked_file} 提取了 {extracted_count} 个SMILES到 {output_smiles_file}")
             return True
+        except Exception as e:
+            logger.error(f"提取SMILES失败: {e}", exc_info=True)
+            return False
     
     def run_initial_generation(self) -> str:
         """
@@ -428,8 +437,8 @@ def main():
     import argparse    
     parser = argparse.ArgumentParser(description='GA完整工作流执行器 (可独立运行)')
     parser.add_argument('--config', type=str, default='fragevo/config_example.json')
-    parser.add_argument('--receptor', type=str, default=None, help='(可选) 要运行的目标受体名称')
-    parser.add_argument('--output_dir', type=str, default=None, help='(可选) 指定输出目录，覆盖配置文件中的设置')    
+    parser.add_argument('--receptor', type=str, default=None, help='--receptor')
+    parser.add_argument('--output_dir', type=str, default=None, help='--output_dir')    
     args = parser.parse_args()    
     # 创建并运行GA工作流
     executor = GAWorkflowExecutor(args.config, args.receptor, args.output_dir)

@@ -244,12 +244,12 @@ def main():
     import argparse
     from operations.selecting.selecting_multi import add_additional_scores, save_selected_molecules_with_scores, print_selection_statistics
     
-    parser = argparse.ArgumentParser(description="增强多目标分子选择")
-    parser.add_argument('--docked_file', type=str, required=True, help='子代对接结果文件')
-    parser.add_argument('--parent_file', type=str, required=True, help='父代对接结果文件')
-    parser.add_argument('--output_file', type=str, required=True, help='输出文件')
-    parser.add_argument('--n_select', type=int, required=True, help='选择数量')
-    parser.add_argument('--strategy', type=str, default='enhanced', help='选择策略')
+    parser = argparse.ArgumentParser(description="enhanced_multi_selection")
+    parser.add_argument('--docked_file', type=str, required=True, help='--docked_file')
+    parser.add_argument('--parent_file', type=str, required=True, help='--parent_file')
+    parser.add_argument('--output_file', type=str, required=True, help='--output_file')
+    parser.add_argument('--n_select', type=int, required=True, help='--n_select')
+    parser.add_argument('--strategy', type=str, default='enhanced', help='--strategy')
     
     args = parser.parse_args()
     

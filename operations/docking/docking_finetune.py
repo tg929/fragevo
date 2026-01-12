@@ -559,15 +559,15 @@ def main():
     import json
     import shutil
 
-    parser = argparse.ArgumentParser(description="分子对接流程脚本")
-    parser.add_argument('--smiles_file', type=str, required=True, help='输入的SMILES文件路径')
-    parser.add_argument('--output_file', type=str, required=True, help='最终输出的对接结果文件路径 (SMILES, score)')
-    parser.add_argument('--config_file', type=str, default='fragevo/config_fragevo.json', help='配置文件路径')
-    parser.add_argument('--generation_dir', type=str, required=True, help='当前代数专用的输出目录')
-    parser.add_argument('--receptor', type=str, default=None, help='要使用的受体名称，如果未提供，则使用配置文件中的默认受体')
+    parser = argparse.ArgumentParser(description="docking")
+    parser.add_argument('--smiles_file', type=str, required=True, help='--smiles_file')
+    parser.add_argument('--output_file', type=str, required=True, help='--output_file')
+    parser.add_argument('--config_file', type=str, default='fragevo/config_fragevo.json', help='--config_file')
+    parser.add_argument('--generation_dir', type=str, required=True, help='--generation_dir')
+    parser.add_argument('--receptor', type=str, default=None, help='--receptor')
     # 新增：显式传递处理器数量
-    parser.add_argument('--number_of_processors', type=int, default=None, help='要使用的CPU核心数，会覆盖配置文件中的设置')
-    parser.add_argument('--seed', type=int, default=None, help='随机种子（用于保证可复现性）')
+    parser.add_argument('--number_of_processors', type=int, default=None, help='--number_of_processors')
+    parser.add_argument('--seed', type=int, default=None, help='--seed')
 
     args = parser.parse_args()
     

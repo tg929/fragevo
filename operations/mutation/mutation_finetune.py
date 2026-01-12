@@ -176,12 +176,12 @@ def run_mutation_simple(config: Dict, parent_smiles: List[str], additional_smile
     return results, executor.lineage_records
 
 def main():
-    parser = argparse.ArgumentParser(description='分子变异操作 (finetune)')
-    parser.add_argument('--smiles_file', type=str, required=True, help='输入SMILES文件路径')
-    parser.add_argument('--output_file', type=str, required=True, help='输出SMILES文件路径')
-    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='配置文件路径')
-    parser.add_argument('--lineage_file', type=str, default=None, help='血统记录输出文件(JSONL)')
-    parser.add_argument('--seed', type=int, default=None, help='随机种子（用于保证可复现性）')
+    parser = argparse.ArgumentParser(description='mutation')
+    parser.add_argument('--smiles_file', type=str, required=True, help='--smiles_file')
+    parser.add_argument('--output_file', type=str, required=True, help='--output_file')
+    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='--config_file')
+    parser.add_argument('--lineage_file', type=str, default=None, help='--lineage_file')
+    parser.add_argument('--seed', type=int, default=None, help='--seed')
     
     args = parser.parse_args()
     

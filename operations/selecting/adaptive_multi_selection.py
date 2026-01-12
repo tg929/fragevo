@@ -200,13 +200,13 @@ def main():
     import argparse
     from operations.selecting.selecting_multi import add_additional_scores, save_selected_molecules_with_scores, print_selection_statistics
     
-    parser = argparse.ArgumentParser(description="自适应多目标分子选择")
-    parser.add_argument('--docked_file', type=str, required=True, help='子代对接结果文件')
-    parser.add_argument('--parent_file', type=str, required=True, help='父代对接结果文件')
-    parser.add_argument('--output_file', type=str, required=True, help='输出文件')
-    parser.add_argument('--n_select', type=int, required=True, help='选择数量')
-    parser.add_argument('--generation', type=int, default=1, help='当前代数')
-    parser.add_argument('--max_generations', type=int, default=10, help='最大代数')
+    parser = argparse.ArgumentParser(description="adaptive_multi_selection")
+    parser.add_argument('--docked_file', type=str, required=True, help='--docked_file')
+    parser.add_argument('--parent_file', type=str, required=True, help='--parent_file')
+    parser.add_argument('--output_file', type=str, required=True, help='--output_file')
+    parser.add_argument('--n_select', type=int, required=True, help='--n_select')
+    parser.add_argument('--generation', type=int, default=1, help='--generation')
+    parser.add_argument('--max_generations', type=int, default=10, help='--max_generations')
     
     args = parser.parse_args()
     

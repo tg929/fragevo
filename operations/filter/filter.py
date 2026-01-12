@@ -211,10 +211,10 @@ def main():
     import json
     from pathlib import Path
     
-    parser = argparse.ArgumentParser(description='分子过滤操作')
-    parser.add_argument('--smiles_file', type=str, required=True, help='输入SMILES文件路径')
-    parser.add_argument('--output_file', type=str, required=True, help='输出SMILES文件路径')
-    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='配置文件路径')
+    parser = argparse.ArgumentParser(description='filter')
+    parser.add_argument('--smiles_file', type=str, required=True, help='--smiles_file')
+    parser.add_argument('--output_file', type=str, required=True, help='--output_file')
+    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='--config_file')
     
     args = parser.parse_args()
     

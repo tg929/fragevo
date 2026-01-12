@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fragevo_rag.py
-==============
-Entry point for running the FragEvo workflow using the RAG-score based
+FragEvo_compscore.py
+====================
+Entry point for running the FragEvo workflow using the Comp Score based
 selection strategy. All other stages and scripts are identical to the
 finetune pipeline; only the selection step is swapped.
 """
@@ -20,12 +20,12 @@ from typing import List, Optional, Tuple
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, PROJECT_ROOT)
 
-from operations.operations_execute_fragevo_rag import FragEvoRAGWorkflowExecutor
+from operations.operations_execute_fragevo_compscore import FragEvoCompScoreWorkflowExecutor
 from utils.cpu_utils import calculate_optimal_workers, get_available_cpu_cores
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("FRAGEVO_RAG_MAIN")
+logger = logging.getLogger("FRAGEVO_COMPSCORE_MAIN")
 
 
 def run_workflow_for_receptor(
@@ -36,7 +36,7 @@ def run_workflow_for_receptor(
 ) -> Tuple[str, bool]:
     receptor_display_name = receptor_name or "default"
     try:
-        executor = FragEvoRAGWorkflowExecutor(
+        executor = FragEvoCompScoreWorkflowExecutor(
             config_path=config_path,
             receptor_name=receptor_name,
             output_dir_override=output_dir,
@@ -49,8 +49,8 @@ def run_workflow_for_receptor(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='FragEvo workflow with RAG-score selection')
-    parser.add_argument('--config', type=str, default='fragevo/config_fragevo_rag.json')
+    parser = argparse.ArgumentParser(description='FragEvo workflow with Comp Score selection')
+    parser.add_argument('--config', type=str, default='fragevo/config_fragevo_compscore.json')
     parser.add_argument('--receptor', type=str, default=None)
     parser.add_argument('--all_receptors', action='store_true')
     parser.add_argument('--output_dir', type=str, default=None)
@@ -116,7 +116,7 @@ def main() -> None:
 
     success = [r for r, ok in results if ok]
     failed = [r for r, ok in results if not ok]
-    logger.info("RAG selection workflow finished. success=%s failed=%s", success, failed)
+    logger.info("Comp Score selection workflow finished. success=%s failed=%s", success, failed)
     raise SystemExit(0 if not failed else 1)
 
 

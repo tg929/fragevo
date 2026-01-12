@@ -4,7 +4,7 @@
     "mgltools_path": "mgltools_x86_64Linux2_1.5.6"
   },
   "workflow": {
-    "output_directory": "FragEvo_output_rag",
+    "output_directory": "FragEvo_output_compscore",
     "max_generations": 10,
     "initial_population_file": "datasets/initial_population/my_initial_population.smi"
   },
@@ -31,8 +31,8 @@
     }
   },
   "selection": {
-    "selection_mode": "rag_score",
-    "rag_score_settings": {
+    "selection_mode": "comp_score",
+    "comp_score_settings": {
       "n_select": 100,
       "normalization": {
         "ds_clip_min": -20.0,

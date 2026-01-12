@@ -3,9 +3,9 @@
     测试：
     python GA_main.py --receptor parp1
 
-2. FragEvo_rag.py
+2. FragEvo_compscore.py
     测试：
-    python FragEvo_rag.py --receptor parp1
+    python FragEvo_compscore.py --receptor parp1
 
 3. FragEvo_main.py
     测试

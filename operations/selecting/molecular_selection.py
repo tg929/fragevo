@@ -203,12 +203,12 @@ def print_selection_statistics(selected_molecules: List[List[str]]):
         print("=" * 40)
 
 def main():
-    parser = argparse.ArgumentParser(description='多种分子选择算法 - 支持父代+子代合并选择')
-    parser.add_argument('--docked_file', type=str, required=True,help='子代对接结果文件路径（格式: SMILES score)')
-    parser.add_argument('--parent_file', type=str, default=None,help='父代对接结果文件路径（可选，格式: SMILES score)')
-    parser.add_argument('--output_file', type=str, required=True,help='输出的选中分子文件路径')
-    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json',help='配置文件路径')
-    parser.add_argument('--selector_override', type=str, default=None, help='(可选) 强制使用指定的选择算法，覆盖配置文件中的设置')
+    parser = argparse.ArgumentParser(description='single_objective_molecular_selection')
+    parser.add_argument('--docked_file', type=str, required=True,help='--docked_file')
+    parser.add_argument('--parent_file', type=str, default=None,help='--parent_file')
+    parser.add_argument('--output_file', type=str, required=True,help='--output_file')
+    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json',help='--config_file')
+    parser.add_argument('--selector_override', type=str, default=None, help='--selector_override')
     
     args = parser.parse_args()
 

@@ -70,5 +70,5 @@ To set : ./fragevo/congfig_fragevo.json/ "selection_mode": "multi_objective".
 ### 3. Benchmark Against Genetic and Learning-Based Baselines
 #### CompScore 
 ```bash
-python FragEvo_rag.py --config fragevo/config_fragevo_rag.json --all_receptors --output_dir FragEvo_output_rag
+python FragEvo_compscore.py --config fragevo/config_fragevo_compscore.json --all_receptors --output_dir FragEvo_output_compscore
 ```

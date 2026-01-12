@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RAG-score based selection script
-================================
+Comp Score based selection script
+============================================
 This script selects next-generation parents using the scoring function:
 
     y = DS_hat * QED * SA_hat,   y in [0, 1]
@@ -15,10 +15,10 @@ Inputs are the docked files of parent and offspring. The script merges them,
 computes QED/SA (via RDKit and sascorer), normalizes DS/SA, and selects the
 top N molecules by y. The output file keeps a backward-compatible layout where
 the 1st column is SMILES and the 2nd column is docking score (DS). Extra
-columns are appended: QED, SA, RAG_Y.
+columns are appended: QED, SA, COMP_SCORE.
 
 Optional novelty/quality filters can be enabled via JSON config under
-selection.rag_score_settings.novelty_filter.
+selection.comp_score_settings.novelty_filter.
 """
 
 import argparse
@@ -147,7 +147,7 @@ def tanimoto_max_similarity(query_smi: str, reference_smis: List[str], fp_type: 
 
 
 def apply_optional_filters(cands: List[Dict], cfg: dict) -> List[Dict]:
-    settings = cfg.get('selection', {}).get('rag_score_settings', {})
+    settings = cfg.get('selection', {}).get('comp_score_settings', {})
     nf = settings.get('novelty_filter', {})
     if not nf or not nf.get('enable', False):
         return cands
@@ -198,16 +198,16 @@ def apply_optional_filters(cands: List[Dict], cfg: dict) -> List[Dict]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='RAG score based selection')
-    parser.add_argument('--docked_file', required=True, help='offspring docked file (SMILES score)')
-    parser.add_argument('--parent_file', required=False, help='parent docked file (SMILES score)')
-    parser.add_argument('--output_file', required=True, help='output next-parents file')
-    parser.add_argument('--n_select', type=int, default=None, help='number to select')
-    parser.add_argument('--config_file', type=str, default=None, help='JSON config path')
+    parser = argparse.ArgumentParser(description='Comp Score based selection')
+    parser.add_argument('--docked_file', required=True, help='--docked_file')
+    parser.add_argument('--parent_file', required=False, help='--parent_file')
+    parser.add_argument('--output_file', required=True, help='--output_file')
+    parser.add_argument('--n_select', type=int, default=None, help='--n_select')
+    parser.add_argument('--config_file', type=str, default=None, help='--config_file')
     args = parser.parse_args()
 
     cfg = read_config(args.config_file)
-    settings = cfg.get('selection', {}).get('rag_score_settings', {})
+    settings = cfg.get('selection', {}).get('comp_score_settings', {})
 
     n_select = args.n_select if args.n_select is not None else int(settings.get('n_select', 100))
     norm_cfg = settings.get('normalization', {})
@@ -245,14 +245,14 @@ def main():
         m2 = dict(m)
         m2['qed_score'] = float(qed)
         m2['sa_score'] = float(sa)
-        m2['rag_y'] = y
+        m2['comp_score'] = y
         enriched.append(m2)
 
     # Apply optional novelty/quality filters
     enriched = apply_optional_filters(enriched, cfg)
 
     # --- Docking-score elitism (optional) ---
-    # Keep top-k by docking score (lower is better), then fill the rest by RAG-Y.
+    # Keep top-k by docking score (lower is better), then fill the rest by Comp Score.
     elitism_cfg = settings.get('elitism', {})
     enable_elitism = bool(elitism_cfg.get('enable', True))
     dock_top_k = int(elitism_cfg.get('dock_top_k', 0))
@@ -266,26 +266,26 @@ def main():
         elite_smiles = set(m['smiles'] for m in elites)
         remaining = [m for m in enriched if m['smiles'] not in elite_smiles]
 
-    # Sort remaining by RAG-Y desc to fill up to n_select
-    remaining.sort(key=lambda d: d['rag_y'], reverse=True)
+    # Sort remaining by Comp Score desc to fill up to n_select
+    remaining.sort(key=lambda d: d['comp_score'], reverse=True)
     selected = elites + (remaining[:max(0, n_select - len(elites))] if n_select > 0 else remaining)
 
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, 'w', encoding='utf-8') as f:
         for m in selected:
-            f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\t{m['qed_score']:.6f}\t{m['sa_score']:.6f}\t{m['rag_y']:.6f}\n")
+            f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\t{m['qed_score']:.6f}\t{m['sa_score']:.6f}\t{m['comp_score']:.6f}\n")
 
     # Optional stats file next to output
     if settings.get('write_stats', True):
         try:
             base_dir = os.path.dirname(args.output_file)
             gen_folder = os.path.basename(base_dir)
-            stats_path = os.path.join(base_dir, f"{gen_folder}_rag_selection_stats.txt")
+            stats_path = os.path.join(base_dir, f"{gen_folder}_comp_score_selection_stats.txt")
             import numpy as np
-            ys = [m['rag_y'] for m in enriched]
+            ys = [m['comp_score'] for m in enriched]
             ds_list = [m['docking_score'] for m in enriched]
             with open(stats_path, 'w', encoding='utf-8') as sf:
-                sf.write("RAG Selection Stats\n")
+                sf.write("Comp Score Selection Stats\n")
                 if ys:
                     sf.write(f"count={len(ys)}\n")
                     sf.write(f"y mean={np.mean(ys):.6f}, y max={np.max(ys):.6f}, y min={np.min(ys):.6f}\n")
@@ -299,4 +299,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

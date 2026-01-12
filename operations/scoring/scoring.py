@@ -106,11 +106,11 @@ def print_calculation_results(results):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate a generation of molecules.")
     parser.add_argument("--current_population_docked_file", type=str, required=True,
-                        help="Path to the SMILES file of the current population with docking scores (SMILES score per line).")
+                        help="--current_population_docked_file")
     parser.add_argument("--initial_population_file", type=str, required=True,
-                        help="Path to the SMILES file of the initial population (for novelty calculation).")
+                        help="--initial_population_file")
     parser.add_argument("--output_file", type=str, required=True,
-                        help="Path to the output file to save calculated metrics (e.g., results.txt or results.csv).")
+                        help="--output_file")
     
     args = parser.parse_args()
     print(f"Processing population file: {args.current_population_docked_file}")

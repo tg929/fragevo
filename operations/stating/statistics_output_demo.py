@@ -245,10 +245,10 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='统计多受体进化实验结果')
     parser.add_argument('--output_dir', type=str, required=True,
-                        help='进化实验的输出目录')
+                        help='--output_dir')
     parser.add_argument('--excel_output', type=str, 
                         default='all_statistics.xlsx',
-                        help='输出Excel文件路径')
+                        help='--excel_output')
     
     args = parser.parse_args()
     

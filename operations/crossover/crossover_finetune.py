@@ -20,18 +20,18 @@ def setup_logging():
     )
     return logging.getLogger("crossover_finetune")
 def main():
-    parser = argparse.ArgumentParser(description='改进的GA交叉参数')
+    parser = argparse.ArgumentParser(description='crossover')
     parser.add_argument("--smiles_file", "-s", type=str, required=True,
-                      help="输入SMILES文件路径")
+                      help="--smiles_file")
     parser.add_argument("--output_file", "-o", type=str, 
                       default=os.path.join(PROJECT_ROOT, "output/generation_crossover_0.smi"),
-                      help="输出文件路径")
+                      help="--output_file")
     parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', 
-                      help='配置文件路径')
+                      help='--config_file')
     parser.add_argument('--lineage_file', type=str, default=None,
-                      help='可选的血统记录输出文件(JSONL)')
+                      help='--lineage_file')
     parser.add_argument('--seed', type=int, default=None,
-                      help='随机种子（用于保证可复现性）')
+                      help='--seed')
     args = parser.parse_args()    
     # 加载配置
     with open(args.config_file, 'r', encoding='utf-8') as f:
