@@ -13,12 +13,47 @@ _fscores = None
 
 
 def readFragmentScores(name='fpscores'):
-    import gzip
     global _fscores
+    import gzip
     # generate the full path filename:
     if name == "fpscores":
         name = op.join(op.dirname(__file__), name)
-    _fscores = cPickle.load(gzip.open('%s.pkl.gz' % name))
+
+    candidates = []
+    # 1) Original expected location: <name>.pkl.gz or <name>.pkl
+    candidates.append(name)
+    # 2) Fallback to repo-shipped fpscores.pkl (non-gz) if present
+    repo_root = op.abspath(op.join(op.dirname(__file__), "..", "..", ".."))
+    candidates.append(op.join(repo_root, "oracle", "fpscores"))
+    candidates.append(op.join(repo_root, "operations", "selecting", "oracle", "fpscores"))
+
+    loaded = None
+    last_error = None
+    for base in candidates:
+        gz_path = f"{base}.pkl.gz"
+        pkl_path = f"{base}.pkl"
+        try:
+            if op.exists(gz_path):
+                with gzip.open(gz_path, "rb") as fh:
+                    loaded = cPickle.load(fh)
+                break
+            if op.exists(pkl_path):
+                with open(pkl_path, "rb") as fh:
+                    loaded = cPickle.load(fh)
+                break
+        except Exception as exc:
+            last_error = exc
+            loaded = None
+
+    if loaded is None:
+        if last_error is not None:
+            raise RuntimeError(f"Failed to load fpscores from candidates={candidates}: {last_error}")
+        raise FileNotFoundError(
+            f"fpscores file not found. Tried: "
+            + ", ".join([f"{c}.pkl.gz/{c}.pkl" for c in candidates])
+        )
+
+    _fscores = loaded
     outDict = {}
     for i in _fscores:
         for j in range(1, len(i)):

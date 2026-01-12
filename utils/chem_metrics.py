@@ -68,7 +68,10 @@ class ChemMetricCache:
 
     def get_or_compute(self, smiles: str) -> Tuple[Optional[float], Optional[float]]:
         if smiles in self._data:
-            return self.get(smiles)
+            qed, sa = self.get(smiles)
+            if qed is not None and sa is not None:
+                return qed, sa
+            # Recompute if a previous run stored missing metrics (e.g., scorer unavailable at the time).
         qed, sa = compute_qed_sa(smiles)
         self.set(smiles, qed, sa)
         return qed, sa
