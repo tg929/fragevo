@@ -49,7 +49,7 @@ The initial population is under `datasets/initial_population/`. You can also pro
 ### FragMLM pre-trained weighted
 <u><a href="https://drive.google.com/drive/folders/1BWxy8PBHk6zTSI1bTdrp-G2fS82uhT_B">Click here to download the weight files</a></u>
 
-After downloading, please place the weight files in the `./fragmlm//weights`.
+After downloading, please place the weight files in the `./fragmlm/weights`.
 ## Usage
 ### 1.  Mini Test
 ```bash

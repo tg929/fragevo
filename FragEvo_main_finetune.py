@@ -12,6 +12,7 @@ import multiprocessing
 import signal
 import psutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import time
 
@@ -27,6 +28,19 @@ active_processes: Dict[int, Dict] = {}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("FRAGEVO_MAIN")
+
+def _is_receptor_completed(output_root: Path, receptor_name: str, max_generations: int) -> bool:
+    """
+    Consider a receptor run completed if the final next-generation parents file exists.
+
+    For max_generations=N, a successful run ends with:
+      generation_{N+1}/initial_population_docked.smi
+    """
+    final_file = output_root / receptor_name / f"generation_{max_generations + 1}" / "initial_population_docked.smi"
+    try:
+        return final_file.is_file() and final_file.stat().st_size > 0
+    except OSError:
+        return False
 
 def monitor_process_memory(pid: int, process_name: str, interval: int = 60):
     """
@@ -226,6 +240,17 @@ def main():
     parser.add_argument('--all_receptors', action='store_true', help='(可选) 运行配置文件中target_list的所有受体')
     parser.add_argument('--output_dir', type=str, default=None, help='(可选) 指定输出总目录')
     parser.add_argument('--memory_per_worker', type=float, default=2.0, help='(可选) 每个工作进程估计需要的内存(GB)')
+    parser.add_argument(
+        '--total_timeout_seconds',
+        type=int,
+        default=0,
+        help='(可选) 全部受体的总超时秒数，0表示不限制（可能一直运行直到全部完成）。'
+    )
+    parser.add_argument(
+        '--rerun_completed',
+        action='store_true',
+        help='(可选) 重新运行已完成的受体（默认会在 --all_receptors 下跳过已完成的受体）。'
+    )
 
     args = parser.parse_args()
 
@@ -243,6 +268,20 @@ def main():
     else:
         receptors_to_run.append(args.receptor)
     logger.info(f"计划运行的受体列表: {receptors_to_run}")
+
+    if args.all_receptors and not args.rerun_completed:
+        workflow_cfg = config.get('workflow', {})
+        output_dir_name = args.output_dir or workflow_cfg.get('output_directory', 'FragEvo_output')
+        output_root = Path(PROJECT_ROOT) / output_dir_name
+        max_generations = int(workflow_cfg.get('max_generations', 0) or 0)
+        if max_generations > 0 and output_root.exists():
+            skipped = [r for r in receptors_to_run if _is_receptor_completed(output_root, r, max_generations)]
+            receptors_to_run = [r for r in receptors_to_run if r not in set(skipped)]
+            if skipped:
+                logger.info("检测到已完成受体，跳过: %s", skipped)
+            if not receptors_to_run:
+                logger.info("所有受体均已完成，未启动新的任务。")
+                sys.exit(0)
 
     # --- 2. 从配置文件读取并行设置 ---
     performance_config = config.get('performance', {})
@@ -337,35 +376,37 @@ def main():
                 )
                 futures[future] = receptor_name
             
-            # 添加超时机制，防止进程无限等待
+            # 可选：添加总超时，防止进程无限等待
             import concurrent.futures
-            timeout_seconds = 14400  # 4小时总超时，给每个受体更多时间
-            result_timeout = 300  # 单个结果等待5分钟
+            total_timeout_seconds = int(args.total_timeout_seconds or 0)
+            if total_timeout_seconds > 0:
+                logger.info(f"启用总超时: {total_timeout_seconds} 秒")
+            else:
+                logger.info("未启用总超时（将一直运行直到全部受体完成或被中断）")
             
             try:
                 completed_count = 0
-                for future in as_completed(futures, timeout=timeout_seconds):
+                completed_iter = (
+                    as_completed(futures, timeout=total_timeout_seconds)
+                    if total_timeout_seconds > 0
+                    else as_completed(futures)
+                )
+                for future in completed_iter:
                     try:
-                        receptor_display_name, success = future.result(timeout=result_timeout)
+                        receptor_display_name, success = future.result()
                         completed_count += 1
                         if success:
                             successful_runs.append(receptor_display_name)
                         else:
                             failed_runs.append(receptor_display_name)
                         logger.info(f"已完成 {completed_count}/{len(receptors_to_run)} 个受体的处理")
-                    except concurrent.futures.TimeoutError:
-                        receptor_name = futures[future]
-                        logger.error(f"获取受体 '{receptor_name}' 结果超时")
-                        failed_runs.append(receptor_name)
-                        # 尝试取消任务
-                        future.cancel()
                     except Exception as e:
                         receptor_name = futures[future]
                         logger.error(f"处理受体 '{receptor_name}' 时发生异常: {e}")
                         failed_runs.append(receptor_name)
                         
             except concurrent.futures.TimeoutError:
-                logger.error("并行执行总超时，可能存在死锁。正在终止所有进程...")
+                logger.error("并行执行总超时，可能存在死锁/卡住步骤。正在终止所有进程...")
                 # 取消所有未完成的任务
                 for future in futures:
                     if not future.done():
