@@ -7,3 +7,4 @@ output_*/*
 .vscode/*
 bin/*
 fragevo/参数配置文件说明.md
+fragevo/GA_main.py
