@@ -13,7 +13,6 @@ In our model, consisting of four main modules:
 (4) Multi-Objective Fitness Evaluation & Selection — multi-criterion assessment and selection to discard invalid molecules and drive iterative population optimization.
 
  <img src="image/20251231212726_91_16.png" alt="image/20251231212726_91_16.png" style="zoom: 50%;" />
----
 
 ## Installation
 
@@ -32,7 +31,7 @@ cd mgltools_x86_64Linux2_1.5.6
 ./install.sh
 cd ..
 ```
-- AutoDock Vina ([autodock vina downloads](https://autodock-vina.readthedocs.io/en/latest/index.html/))/ QVina2 ([qvina2downloads](https://openbabel.org/docs/Installation/install.html#))
+- AutoDock Vina ([autodock vina downloads](https://autodock-vina.readthedocs.io/en/latest/index.html))/ QVina2 ([qvina2downloads](https://qvina.github.io/))
 Place the docking executable under the project root, or use the bundled executables from the AutoGrow fork: `./autogrow/docking/docking_executables/`.
 ```bash
 chmod +x ./autodock_vina_*/bin/vina
@@ -53,6 +52,7 @@ The initial population is under `datasets/initial_population/`. You can also pro
 
 After downloading, please place the weight files in the `./fragmlm/weights`.
 ## Usage
+Model-generated molecule results and analysis outputs are saved under `results/`.
 ### 1.  Mini Test
 ```bash
 python FragEvo_main.py --config fragevo/config_fragevo.json --receptor parp1 --output_dir output
