@@ -52,7 +52,7 @@ The initial population is under `datasets/initial_population/`. You can also pro
 
 After downloading, please place the weight files in the `./fragmlm/weights`.
 ## Usage
-Model-generated molecule results and analysis outputs are saved under `results/`.
+Model-generated molecule results and analysis outputs are saved under `results/`. Note: SMILES in `results/smiles_output_300ranked_by_receptor.csv` contain explicit hydrogens (RDKit explicit-H SMILES) and are structurally equivalent to their implicit-hydrogen representations.
 ### 1.  Mini Test
 ```bash
 python FragEvo_main.py --config fragevo/config_fragevo.json --receptor parp1 --output_dir output
