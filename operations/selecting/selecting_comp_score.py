@@ -28,7 +28,9 @@ import sys
 from typing import List, Dict, Tuple, Optional
 
 from rdkit import Chem
+from rdkit import DataStructs
 from rdkit.Chem import QED
+from rdkit.Chem import rdMolDescriptors
 
 # SA scorer (same as other modules in this repo)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -113,8 +115,6 @@ def normalize_sa(sa: float, sa_max_value: float = 10.0, sa_denominator: float = 
 
 def build_fp(smiles: str, fp_type: str = 'morgan', radius: int = 2, nbits: int = 2048):
     try:
-        from rdkit.Chem import rdMolDescriptors
-        from rdkit import DataStructs
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return None
@@ -128,10 +128,6 @@ def build_fp(smiles: str, fp_type: str = 'morgan', radius: int = 2, nbits: int =
 
 
 def tanimoto_max_similarity(query_smi: str, reference_smis: List[str], fp_type: str = 'morgan', radius: int = 2, nbits: int = 2048) -> float:
-    try:
-        from rdkit import DataStructs
-    except Exception:
-        return 0.0
     qfp = build_fp(query_smi, fp_type, radius, nbits)
     if qfp is None or not reference_smis:
         return 0.0

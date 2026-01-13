@@ -9,6 +9,7 @@ import logging
 import autogrow.operators.crossover.smiles_merge.smiles_merge as smiles_merge 
 import autogrow.operators.crossover.execute_crossover as execute_crossover
 import autogrow.operators.filter.execute_filters as Filter
+from rdkit import Chem
 
 def setup_logging():
     logging.basicConfig(
@@ -19,6 +20,31 @@ def setup_logging():
         ]
     )
     return logging.getLogger("crossover_finetune")
+
+
+def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return smiles
+        mol = Chem.RemoveHs(mol)
+        return Chem.MolToSmiles(mol, isomericSmiles=True)
+    except Exception:
+        return smiles
+
+
+def _normalize_unique_smiles(smiles_list):
+    normalized = []
+    seen = set()
+    for s in smiles_list:
+        if not s:
+            continue
+        ns = _normalize_smiles_remove_explicit_h(s)
+        if ns in seen:
+            continue
+        seen.add(ns)
+        normalized.append(ns)
+    return normalized, seen
 def main():
     parser = argparse.ArgumentParser(description='crossover')
     parser.add_argument("--smiles_file", "-s", type=str, required=True,
@@ -130,7 +156,40 @@ def main():
 
     if attempts >= max_attempts:
         logger.warning(f"达到最大尝试次数 {max_attempts}，但只生成了 {len(crossed_population)} 个有效分子")
-        
+
+    input_smiles_set_noh = {_normalize_smiles_remove_explicit_h(s) for s in input_smiles_set if s}
+    crossed_population_noh, _ = _normalize_unique_smiles(crossed_population)
+    crossed_population_noh = [s for s in crossed_population_noh if s not in input_smiles_set_noh]
+    crossed_population_noh_set = set(crossed_population_noh)
+
+    if len(crossed_population_noh) != len(crossed_population):
+        logger.info(
+            "交叉结果SMILES已规范化(去显式H): %d -> %d",
+            len(crossed_population),
+            len(crossed_population_noh),
+        )
+
+    crossed_population = crossed_population_noh
+    crossed_population_set = crossed_population_noh_set
+
+    if lineage_records is not None:
+        deduped_lineage = []
+        seen_children = set()
+        for record in lineage_records:
+            child = record.get("child")
+            if not child:
+                continue
+            child_noh = _normalize_smiles_remove_explicit_h(child)
+            if child_noh not in crossed_population_set:
+                continue
+            if child_noh in seen_children:
+                continue
+            record = dict(record)
+            record["child"] = child_noh
+            deduped_lineage.append(record)
+            seen_children.add(child_noh)
+        lineage_records = deduped_lineage
+
     logger.info(f"本轮交叉实际生成 {len(crossed_population)} 个新分子，尝试次数: {attempts}")
     
     # 保存最终结果 (只保存新交叉生成的分子)

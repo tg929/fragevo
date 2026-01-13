@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from contextlib import contextmanager
 from tqdm import tqdm
+from rdkit import Chem
 @contextmanager
 def suppress_stdout_stderr():
     """A context manager that redirects stdout and stderr to devnull"""
@@ -27,6 +28,31 @@ from autogrow.operators.mutation.smiles_click_chem.smiles_click_chem import Smil
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return smiles
+        mol = Chem.RemoveHs(mol)
+        return Chem.MolToSmiles(mol, isomericSmiles=True)
+    except Exception:
+        return smiles
+
+
+def _normalize_unique_smiles(smiles_list):
+    normalized = []
+    seen = set()
+    for s in smiles_list:
+        if not s:
+            continue
+        ns = _normalize_smiles_remove_explicit_h(s)
+        if ns in seen:
+            continue
+        seen.add(ns)
+        normalized.append(ns)
+    return normalized, seen
 class MutationExecutor:
     """执行分子变异操作的类"""
     def __init__(self, config: Dict):
@@ -153,19 +179,43 @@ class MutationExecutor:
             if progress_bar:
                 progress_bar.close()        
         unique_results = sorted(set(mutation_results))
-        success_rate = len(unique_results) / attempts * 100 if attempts > 0 else 0
+        parent_set_noh = {_normalize_smiles_remove_explicit_h(s) for s in total_population if s}
+        unique_results_noh, _ = _normalize_unique_smiles(unique_results)
+        unique_results_noh = [s for s in unique_results_noh if s not in parent_set_noh]
+        unique_set_noh = set(unique_results_noh)
+        success_rate = len(unique_results_noh) / attempts * 100 if attempts > 0 else 0
         
-        self.logger.info(f"变异完成: 目标 {num_mutations}, 实际生成 {len(unique_results)} 个独特分子")
+        if len(unique_results_noh) != len(unique_results):
+            self.logger.info(
+                "变异结果SMILES已规范化(去显式H): %d -> %d",
+                len(unique_results),
+                len(unique_results_noh),
+            )
+        self.logger.info(f"变异完成: 目标 {num_mutations}, 实际生成 {len(unique_results_noh)} 个独特分子")
         self.logger.info(f"总尝试次数: {attempts}, 成功率: {success_rate:.1f}%, 无法变异的分子数: {len(failed_molecules)}")
 
-        if len(unique_results) != len(self.lineage_records):
-            unique_set = set(unique_results)
-            self.lineage_records = [record for record in self.lineage_records if record.get("child") in unique_set]
+        if self.enable_lineage_tracking:
+            deduped_lineage = []
+            seen_children = set()
+            for record in self.lineage_records:
+                child = record.get("child")
+                if not child:
+                    continue
+                child_noh = _normalize_smiles_remove_explicit_h(child)
+                if child_noh not in unique_set_noh:
+                    continue
+                if child_noh in seen_children:
+                    continue
+                record = dict(record)
+                record["child"] = child_noh
+                deduped_lineage.append(record)
+                seen_children.add(child_noh)
+            self.lineage_records = deduped_lineage
         
-        if len(unique_results) == 0:
+        if len(unique_results_noh) == 0:
             self.logger.warning("未能生成任何新分子，请检查输入分子是否包含可变异的官能团")
             
-        return unique_results
+        return unique_results_noh
 
 def run_mutation_simple(config: Dict, parent_smiles: List[str], additional_smiles: List[str] = None) -> Tuple[List[str], List[Dict]]:
     """
