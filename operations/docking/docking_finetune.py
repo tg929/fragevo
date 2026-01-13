@@ -169,6 +169,20 @@ def keep_best_docking_results(results_dir):
 
 def output_smiles_scores(smiles_file, scores_dict, output_file):
     """将成功对接的结果写入文件,按对接分数排序（分数越低越好排在前面）,不包含头,不记录NA值。"""
+    def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
+        try:
+            from rdkit import Chem
+        except Exception:
+            return smiles
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol is None:
+                return smiles
+            mol = Chem.RemoveHs(mol)
+            return Chem.MolToSmiles(mol, isomericSmiles=True)
+        except Exception:
+            return smiles
+
     # 读取SMILES与分子名映射
     smiles_map = {}
     with open(smiles_file, "r") as f:
@@ -184,7 +198,8 @@ def output_smiles_scores(smiles_file, scores_dict, output_file):
         score = scores_dict.get(mol_name, "NA")
         # 仅收集得分有效的分子
         if score != "NA":
-            valid_molecules.append((smiles, float(score)))
+            norm_smiles = _normalize_smiles_remove_explicit_h(smiles)
+            valid_molecules.append((norm_smiles, float(score)))
     
     # 按对接分数排序（分数越低越好，升序排列）
     valid_molecules.sort(key=lambda x: x[1])
