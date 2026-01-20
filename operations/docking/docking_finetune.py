@@ -14,6 +14,7 @@ import time
 import re
 import shutil
 import random
+import tempfile
 from pathlib import Path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
@@ -48,6 +49,108 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 导入CPU检测工具
 from utils.cpu_utils import get_available_cpu_cores
 
+def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
+    from rdkit import Chem
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return smiles
+        mol = Chem.RemoveHs(mol)
+        return Chem.MolToSmiles(mol, isomericSmiles=True)
+    except Exception:
+        return smiles
+
+def _obabel_fast_vina_dock_single(
+    idx: int,
+    smiles: str,
+    receptor_pdbqt: str,
+    vina_executable: str,
+    obabel_path: str,
+    center_x: float,
+    center_y: float,
+    center_z: float,
+    size_x: float,
+    size_y: float,
+    size_z: float,
+    cpu_per_dock: int,
+    exhaustiveness: int,
+    num_modes: int,
+    seed: Optional[int],
+    gen3d_timeout: int,
+    convert_timeout: int,
+    dock_timeout: int,
+    temp_dir: str,
+    keep_temp: bool,
+) -> Tuple[int, Optional[float]]:
+    pid = os.getpid()
+    mol_file = os.path.join(temp_dir, f"ligand_{pid}_{idx}.mol")
+    pdbqt_file = os.path.join(temp_dir, f"ligand_{pid}_{idx}.pdbqt")
+    out_pdbqt = os.path.join(temp_dir, f"dock_{pid}_{idx}.pdbqt")
+
+    try:
+        subprocess.check_output(
+            [obabel_path, f"-:{smiles}", "--gen3D", "-O", mol_file],
+            stderr=subprocess.STDOUT,
+            timeout=gen3d_timeout,
+            universal_newlines=True,
+        )
+        subprocess.check_output(
+            [obabel_path, "-imol", mol_file, "-opdbqt", "-O", pdbqt_file],
+            stderr=subprocess.STDOUT,
+            timeout=convert_timeout,
+            universal_newlines=True,
+        )
+
+        cmd = [
+            vina_executable,
+            "--receptor", receptor_pdbqt,
+            "--ligand", pdbqt_file,
+            "--out", out_pdbqt,
+            "--center_x", str(center_x),
+            "--center_y", str(center_y),
+            "--center_z", str(center_z),
+            "--size_x", str(size_x),
+            "--size_y", str(size_y),
+            "--size_z", str(size_z),
+            "--cpu", str(cpu_per_dock),
+            "--num_modes", str(num_modes),
+            "--exhaustiveness", str(exhaustiveness),
+        ]
+        if seed is not None:
+            cmd.extend(["--seed", str(int(seed))])
+        result = subprocess.check_output(
+            cmd,
+            stderr=subprocess.STDOUT,
+            timeout=dock_timeout,
+            universal_newlines=True,
+        )
+
+        check_result = False
+        affinity_list: List[float] = []
+        for line in result.splitlines():
+            if line.startswith("-----+"):
+                check_result = True
+                continue
+            if not check_result:
+                continue
+            if line.startswith("Writing output") or line.startswith("Refine time"):
+                break
+            parts = line.strip().split()
+            if not parts or not parts[0].isdigit():
+                break
+            affinity_list.append(float(parts[1]))
+        return idx, min(affinity_list) if affinity_list else None
+    except Exception:
+        return idx, None
+    finally:
+        if not keep_temp:
+            for p in (mol_file, pdbqt_file, out_pdbqt):
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except Exception:
+                    pass
+
 def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
     """ 单个分子的对接函数，静默忽略失败分子。"""    
     out_file = os.path.join(results_dir, os.path.basename(ligand_file).replace(".pdbqt", "_out.pdbqt"))
@@ -65,10 +168,37 @@ def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
         "--out", out_file,
         "--log", log_file
     ]
+
+    # 关键性能修复：显式控制 docking 程序使用的 CPU 核心数，避免与外层并行发生严重超卖（oversubscription）。
+    cpu_per_dock = vars.get("_resolved_cpu_per_dock") or vars.get("docking_cpu_per_dock")
+    if cpu_per_dock is not None:
+        try:
+            cpu_per_dock = int(cpu_per_dock)
+        except Exception:
+            cpu_per_dock = None
+    if cpu_per_dock is not None and cpu_per_dock > 0:
+        cmd.extend(["--cpu", str(cpu_per_dock)])
+
+    # 可选：如果用户希望配置文件里的参数生效，则传入 --exhaustiveness/--num_modes
+    if vars.get("pass_vina_params", False):
+        exhaustiveness = vars.get("docking_exhaustiveness")
+        num_modes = vars.get("docking_num_modes")
+        if exhaustiveness is not None:
+            cmd.extend(["--exhaustiveness", str(int(exhaustiveness))])
+        if num_modes is not None:
+            cmd.extend(["--num_modes", str(int(num_modes))])
+
     seed_value = vars.get("seed")
     if seed_value is not None:
         cmd.extend(["--seed", str(seed_value)])
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=300)
+
+    timeout_seconds = vars.get("docking_timeout_seconds", 300)
+    try:
+        timeout_seconds = int(timeout_seconds)
+    except Exception:
+        timeout_seconds = 300
+
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout_seconds)
     score = extract_vina_score_from_pdbqt(out_file)
     if os.path.exists(log_file):
         os.remove(log_file)
@@ -169,17 +299,6 @@ def keep_best_docking_results(results_dir):
 
 def output_smiles_scores(smiles_file, scores_dict, output_file):
     """将成功对接的结果写入文件,按对接分数排序（分数越低越好排在前面）,不包含头,不记录NA值。"""
-    from rdkit import Chem
-    def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
-        try:
-            mol = Chem.MolFromSmiles(smiles)
-            if mol is None:
-                return smiles
-            mol = Chem.RemoveHs(mol)
-            return Chem.MolToSmiles(mol, isomericSmiles=True)
-        except Exception:
-            return smiles
-
     # 读取SMILES与分子名映射
     smiles_map = {}
     with open(smiles_file, "r") as f:
@@ -255,15 +374,26 @@ class DockingWorkflow:
         # 初始化vars字典
         self.vars = {
             # 对接配置
+            'pipeline': docking_config.get('pipeline', 'autogrow'),
             'dock_choice': docking_config.get('dock_choice', 'VinaDocking'),
             'conversion_choice': docking_config.get('conversion_choice', 'MGLToolsConversion'),
             'docking_exhaustiveness': docking_config.get('docking_exhaustiveness', 8),
             'docking_num_modes': docking_config.get('docking_num_modes', 9),
+            'pass_vina_params': docking_config.get('pass_vina_params', False),
             'number_of_processors': processor_count,
             'seed': docking_config.get('seed'),
             'max_variants_per_compound': docking_config.get('max_variants_per_compound', 3),
             'gypsum_thoroughness': docking_config.get('gypsum_thoroughness', 3),
             'gypsum_timeout_limit': docking_config.get('gypsum_timeout_limit', 15),
+            'docking_timeout_seconds': docking_config.get('docking_timeout_seconds', 300),
+            'docking_cpu_per_dock': docking_config.get('docking_cpu_per_dock'),
+            # obabel 快速流程参数
+            'obabel_path': resolve_path('obabel_path'),
+            'obabel_gen3d_timeout_seconds': docking_config.get('obabel_gen3d_timeout_seconds', 30),
+            'obabel_convert_timeout_seconds': docking_config.get('obabel_convert_timeout_seconds', 30),
+            'obabel_fail_score': docking_config.get('obabel_fail_score', 99.9),
+            'obabel_filter_score_above': docking_config.get('obabel_filter_score_above', 50.0),
+            'obabel_keep_temp': docking_config.get('obabel_keep_temp', False),
             'min_ph': docking_config.get('min_ph', 6.4),
             'max_ph': docking_config.get('max_ph', 8.4),
             'pka_precision': docking_config.get('pka_precision', 1.0),
@@ -394,18 +524,23 @@ class DockingWorkflow:
         ligand_dir = self.vars["ligand_dir"]
         if not os.path.exists(ligand_dir):
             os.makedirs(ligand_dir)
-        # 1. SMILES转3D SDF
+
+        # 1) SMILES -> 3D SDF -> PDB（convert_to_3d 内部已包含 SDF->PDB 的转换）
         convert_to_3d(self.vars, smi_file, ligand_dir)
-        # 2. SDF转PDB
-        sdf_dir = self.vars["sdf_dir"]
-        convert_sdf_to_pdbs(self.vars, sdf_dir, sdf_dir)
-        pdb_dir = sdf_dir + "_PDB"
+
+        # convert_to_3d 会把 PDB 输出到 `${ligand_dir}_PDB/`，避免重复再跑一次 convert_sdf_to_pdbs（会额外生成 `${sdf_dir}_PDB/`，浪费大量时间）
+        pdb_dir = ligand_dir + "_PDB"
         if not os.path.exists(pdb_dir):
             raise RuntimeError(f"PDB目录未生成: {pdb_dir}")
         # 3. PDB转PDBQT 
         pdb_files = glob.glob(os.path.join(pdb_dir, "*.pdb"))        
         # 实例化转换器一次，而不是在循环中
         file_conversion_class = self.pick_conversion_class(self.vars["conversion_choice"])
+        if file_conversion_class is ObabelConversion and not self.vars.get("obabel_path"):
+            raise RuntimeError(
+                "conversion_choice=ObabelConversion 但未找到 obabel 可执行文件；"
+                "请在配置里设置 docking.obabel_path 或确保 `obabel` 在 PATH 中。"
+            )
         file_converter = file_conversion_class(self.vars, None, test_boot=False)        
         for pdb_file in tqdm(pdb_files, desc="PDB->PDBQT转换进度"):
             pdbqt_file = pdb_file + "qt"
@@ -414,6 +549,132 @@ class DockingWorkflow:
                 continue            
             success, smile_name = file_converter.convert_ligand_pdb_file_to_pdbqt(pdb_file)
         return pdb_dir  # 返回包含PDBQT文件的目录
+
+    def _resolve_parallel_settings(self) -> Tuple[int, int]:
+        """
+        解析并行设置，返回:
+        - num_workers: 外层并行任务数
+        - cpu_per_dock: 传给 vina/qvina 的 --cpu
+        """
+        num_workers = self.vars.get("number_of_processors")
+        available_cores = None
+        if num_workers is None or num_workers == -1:
+            available_cores, cpu_usage = get_available_cpu_cores()
+            num_workers = available_cores
+            print(f"自动检测到 {available_cores} 个空闲CPU核心（当前系统使用率: {cpu_usage:.1f}%）")
+        else:
+            num_workers = int(num_workers)
+        num_workers = max(1, int(num_workers))
+
+        cpu_per_dock = self.vars.get("docking_cpu_per_dock")
+        if cpu_per_dock is None:
+            total_for_calc = available_cores if available_cores else (os.cpu_count() or num_workers)
+            cpu_per_dock = max(1, int(total_for_calc) // num_workers)
+        else:
+            cpu_per_dock = max(1, int(cpu_per_dock))
+            total_for_calc = available_cores if available_cores else (os.cpu_count() or num_workers)
+            num_workers = min(num_workers, max(1, int(total_for_calc) // cpu_per_dock))
+        return num_workers, cpu_per_dock
+
+    def run_obabel_fast_docking(self, receptor_pdbqt: str, smiles_file: str) -> str:
+        """
+        使用 obabel 快速 pipeline（bd3lms 风格）：SMILES -> obabel gen3D -> obabel pdbqt -> vina/qvina。
+        输出 `docking_results/final_scored.smi`，格式: `SMILES\\tScore`，按分数升序。
+        """
+        print("执行分子对接 (obabel_fast)...")
+
+        results_dir = os.path.join(self.vars["output_directory"], "docking_results")
+        os.makedirs(results_dir, exist_ok=True)
+
+        tmp_root = os.path.join(self.vars["output_directory"], "obabel_docking_tmp")
+        os.makedirs(tmp_root, exist_ok=True)
+
+        # 读取 SMILES（输入行格式允许: "SMILES [NAME]"；只取第 1 列）
+        smiles_list: List[str] = []
+        with open(smiles_file, "r", encoding="utf-8") as f:
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                smiles_list.append(s.split()[0])
+
+        num_workers, cpu_per_dock = self._resolve_parallel_settings()
+        print(f"将使用 {num_workers} 个并行任务进行对接（每个任务 --cpu {cpu_per_dock}）...")
+
+        # 每次运行使用一个独立临时目录，避免历史残留
+        temp_dir = tempfile.mkdtemp(prefix="obabel_", dir=tmp_root)
+        keep_temp = bool(self.vars.get("obabel_keep_temp", False))
+
+        try:
+            scores: Dict[str, float] = {}
+            fail_score = float(self.vars.get("obabel_fail_score", 99.9))
+            filter_above = float(self.vars.get("obabel_filter_score_above", 50.0))
+            obabel_path = self.vars["obabel_path"]
+            vina_executable = self.vars["docking_executable"]
+            exhaustiveness = int(self.vars.get("docking_exhaustiveness", 1))
+            num_modes = int(self.vars.get("docking_num_modes", 10))
+            gen3d_timeout = int(self.vars.get("obabel_gen3d_timeout_seconds", 30))
+            convert_timeout = int(self.vars.get("obabel_convert_timeout_seconds", 30))
+            dock_timeout = int(self.vars.get("docking_timeout_seconds", 100))
+            seed = self.vars.get("seed")
+
+            with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                futures = []
+                for idx, smi in enumerate(smiles_list):
+                    futures.append(
+                        executor.submit(
+                            _obabel_fast_vina_dock_single,
+                            idx,
+                            smi,
+                            receptor_pdbqt,
+                            vina_executable,
+                            obabel_path,
+                            float(self.vars["center_x"]),
+                            float(self.vars["center_y"]),
+                            float(self.vars["center_z"]),
+                            float(self.vars["size_x"]),
+                            float(self.vars["size_y"]),
+                            float(self.vars["size_z"]),
+                            int(cpu_per_dock),
+                            exhaustiveness,
+                            num_modes,
+                            seed,
+                            gen3d_timeout,
+                            convert_timeout,
+                            dock_timeout,
+                            temp_dir,
+                            keep_temp,
+                        )
+                    )
+
+                for fut in tqdm(as_completed(futures), total=len(futures), desc="对接进度"):
+                    try:
+                        idx, score_float = fut.result()
+                    except Exception:
+                        continue
+                    if score_float is None:
+                        continue
+                    if score_float >= fail_score or score_float > filter_above:
+                        continue
+                    smi = smiles_list[idx]
+                    smi = _normalize_smiles_remove_explicit_h(smi)
+                    best = scores.get(smi)
+                    if best is None or score_float < best:
+                        scores[smi] = score_float
+
+            final_scores_file = os.path.join(results_dir, "final_scored.smi")
+            sorted_items = sorted(scores.items(), key=lambda x: x[1])
+            with open(final_scores_file, "w", encoding="utf-8") as out:
+                for smi, sc in sorted_items:
+                    out.write(f"{smi}\t{sc}\n")
+            print(f"已将 {len(sorted_items)} 个有效分子按对接分数排序写入 {final_scores_file}")
+            return final_scores_file
+        finally:
+            if not keep_temp:
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception:
+                    pass
 
     def run_docking(self, receptor_pdbqt: str, ligand_dir: str) -> str:
         print("执行分子对接...")
@@ -425,19 +686,10 @@ class DockingWorkflow:
         # 配体文件查找
         ligand_files = sorted(glob.glob(os.path.join(ligand_dir, "*.pdbqt")))
         
-        # 智能CPU核心数处理
-        num_workers = self.vars.get("number_of_processors")
-        if num_workers is None or num_workers == -1:
-            # 自动检测模式：使用实时CPU检测
-            available_cores, cpu_usage = get_available_cpu_cores()
-            num_workers = available_cores
-            print(f"自动检测到 {available_cores} 个空闲CPU核心（当前系统使用率: {cpu_usage:.1f}%）")
-        else:
-            num_workers = int(num_workers)
-        
-        # 确保至少使用1个核心
-        num_workers = max(1, num_workers)
-        print(f"将使用 {num_workers} 个CPU核心进行并行对接...")
+        num_workers, cpu_per_dock = self._resolve_parallel_settings()
+        self.vars["_resolved_cpu_per_dock"] = cpu_per_dock
+
+        print(f"将使用 {num_workers} 个并行任务进行对接（每个任务 --cpu {cpu_per_dock}）...")
         future_to_ligand = {}  # 对接任务与配体文件的映射
         scores = {}
         
@@ -549,14 +801,7 @@ def run_molecular_docking(config: Dict, ligands_file: str, generation_dir: str, 
             logger.error("受体准备失败")
             return None
         
-        # 2. 准备配体 (SMILES -> 3D PDB -> PDBQT)
-        pdbqt_dir = workflow.prepare_ligands(ligands_file)
-        if not pdbqt_dir:
-            logger.error("配体准备失败")
-            return None
-            
-        # 3. 执行对接
-        final_results_file = workflow.run_docking(receptor_pdbqt, pdbqt_dir)
+        final_results_file = workflow.run_obabel_fast_docking(receptor_pdbqt, ligands_file)
         
         if final_results_file and os.path.exists(final_results_file):
             logger.info(f"对接成功完成。最终结果保存在: {final_results_file}")
