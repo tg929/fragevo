@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-FragEvo 混合工作流执行脚本
+FragEvo 工作流执行脚本
 ==========================
 1. 种群初始化和评估
 2. 基于父代的分子分解与掩码
-3. 使用GPT模型生成新的、多样化的分子
-4. 对父代和GPT生成的分子进行遗传算法操作(交叉、突变)
+3. 使用MLM模型生成新的、多样化的分子
+4. 对父代和MLM生成的分子进行遗传算法操作(交叉、突变)
 5. 对新生成的子代进行评估
 6. 通过选择策略（单目标或多目标）筛选出下一代种群
 7. 继续迭代
@@ -27,21 +27,17 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import atexit
 
-# 移除全局日志配置，避免多进程日志冲突
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-# 确保logger有基本的handler，但不会与其他进程冲突
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/FragEvo/operations/operations_execute_fragevo_finetune.py  .resolve()：将相对路径转换为绝对路径 
-                                                             #整个项目地址：/data1/ytg/medium_models/FragEvo
-sys.path.insert(0, str(PROJECT_ROOT))#0：添加目录到搜索列表最前面
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent 
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
-class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在调用这个类
+class FragEvoWorkflowExecutor:    
     def __init__(self, config_path: str, receptor_name: Optional[str] = None, output_dir_override: Optional[str] = None, num_processors_override: Optional[int] = None):
         """
         初始化FragEvo工作流执行器。        
@@ -53,8 +49,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         """
         self.config_path = config_path
         self.config = self._load_config()        
-        # 应用处理器数量覆盖
-        if num_processors_override is not None:#有自定义处理器数量设置
+
+        if num_processors_override is not None:
             self.config['performance']['number_of_processors'] = num_processors_override
             logger.info(f"运行时覆盖处理器数量为: {num_processors_override}")
             
@@ -64,40 +60,30 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         logger.info(f"FragEvo工作流初始化完成, 输出目录: {self.output_dir}")
         logger.info(f"最大迭代代数: {self.max_generations}")
         
-        # 资源跟踪
         self._temp_files: Set[str] = set()
         self._temp_dirs: Set[str] = set()
-        self._running_processes: List[subprocess.Popen] = []
-        
-        # 注册退出处理函数
+        self._running_processes: List[subprocess.Popen] = []  
         atexit.register(self.cleanup_resources)
 
     def __del__(self):
         """析构函数，确保资源被释放"""
         self.cleanup_resources()
 
-    def cleanup_resources(self):
-        """清理所有资源"""
-        # 终止所有可能仍在运行的进程
+    def cleanup_resources(self):      
         for process in self._running_processes:
             if process.poll() is None:
                 try:
                     logger.info(f"终止子进程 PID: {process.pid}")
-                    process.terminate()
-                    # 给进程一些时间来优雅地终止
-                    for _ in range(10):  # 等待最多1秒
+                    process.terminate()                  
+                    for _ in range(10):  
                         if process.poll() is not None:
                             break
                         time.sleep(0.1)
-                    
-                    # 如果进程仍在运行，强制终止
                     if process.poll() is None:
                         logger.warning(f"强制终止子进程 PID: {process.pid}")
                         process.kill()
                 except Exception as e:
-                    logger.warning(f"清理子进程 PID {getattr(process, 'pid', 'unknown')} 时发生错误: {e}")
-        
-        # 清理临时文件
+                    logger.warning(f"清理子进程 PID {getattr(process, 'pid', 'unknown')} 时发生错误: {e}")        
         for temp_file in self._temp_files:
             try:
                 if os.path.exists(temp_file):
@@ -105,8 +91,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                     logger.debug(f"已清理临时文件: {temp_file}")
             except Exception as e:
                 logger.debug(f"清理临时文件失败 {temp_file}: {e}")
-        
-        # 清理临时目录
         for temp_dir in self._temp_dirs:
             try:
                 if os.path.exists(temp_dir):
@@ -114,50 +98,44 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                     logger.debug(f"已清理临时目录: {temp_dir}")
             except Exception as e:
                 logger.debug(f"清理临时目录失败 {temp_dir}: {e}")
-        
-        # 清空资源列表
         self._running_processes = []
         self._temp_files = set()
         self._temp_dirs = set()
 
-    def _load_config(self) -> dict:#加载配置文件
+    def _load_config(self) -> dict:
         with open(self.config_path, 'r', encoding='utf-8') as f:
             return json.load(f)       
 
     def _setup_parameters_and_paths(self, receptor_name: Optional[str], output_dir_override: Optional[str]):        
         self.project_root = Path(self.config.get('paths', {}).get('project_root', PROJECT_ROOT))
         workflow_config = self.config.get('workflow', {})
-        gpt_config = self.config.get('gpt', {})
-        self.dynamic_masking_config = gpt_config.get('dynamic_masking', {'enable': False})
-        # 记录配置和根目录
+        mlm_config = self.config.get('mlm') or self.config.get('gpt', {})
+        self.dynamic_masking_config = mlm_config.get('dynamic_masking', {'enable': False})
         self.run_params['config_file_path'] = self.config_path
         self.run_params['project_root'] = str(self.project_root)
-        # 确定输出目录
         if output_dir_override:
             output_dir_name = output_dir_override
         else:
             output_dir_name = workflow_config.get('output_directory', 'FragEvo_output')
         base_output_dir = self.project_root / output_dir_name
         self.run_params['base_output_dir'] = str(base_output_dir)
-        # 根据受体确定最终运行目录
         self.receptor_name = receptor_name
         if self.receptor_name:
             self.output_dir = base_output_dir / self.receptor_name
             self.run_params['receptor_name'] = self.receptor_name
         else:
-            # 如果没有指定受体，使用默认或创建一个通用运行目录
+           
             default_receptor_info = self.config.get('receptors', {}).get('default_receptor', {})
             default_receptor_name = default_receptor_info.get('name', 'default_run')
             self.output_dir = base_output_dir / default_receptor_name
             self.run_params['receptor_name'] = default_receptor_name
         self.run_params['run_specific_output_dir'] = str(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # 加载GA和GPT的核心参数
+ 
         self.max_generations = workflow_config.get('max_generations', 10)
         self.initial_population_file = workflow_config.get('initial_population_file')
         self.run_params['max_generations'] = self.max_generations
-        self.run_params['initial_population_file'] = self.initial_population_file
-        # 记录选择模式
+        self.run_params['initial_population_file'] = self.initial_population_file  
         selection_config = self.config.get('selection', {})
         self.run_params['selection_mode'] = selection_config.get('selection_mode', 'single_objective')
 
@@ -171,19 +149,18 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             int: 应该用于掩码的片段数量。
         """
         if not self.dynamic_masking_config.get('enable', False) or self.max_generations <= 1:
-            # 如果不启用或总代数只有1代，则使用固定的值
-            return self.config.get('gpt', {}).get('n_fragments_to_mask', 1)        
+            mlm_config = self.config.get('mlm') or self.config.get('gpt', {})
+            return mlm_config.get('n_fragments_to_mask', 1)
         initial_mask = self.dynamic_masking_config.get('initial_mask_fragments', 2)
         final_mask = self.dynamic_masking_config.get('final_mask_fragments', 1)        
         # 使用线性插值计算当前代数的掩码数
         # y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
-        # 这里 x=generation, x1=1, y1=initial_mask, x2=max_generations, y2=final_mask        
-        # 防止除以零
+        # 这里 x=generation, x1=1, y1=initial_mask, x2=max_generations, y2=final_mask            
         if self.max_generations == 1:
             return initial_mask            
         progress = (generation - 1) / (self.max_generations - 1)
-        mask_count = initial_mask + progress * (final_mask - initial_mask)        
-        # 四舍五入到最近的整数，并确保结果在[final_mask, initial_mask]范围内
+        mask_count = initial_mask + progress * (final_mask - initial_mask)   
+       
         return int(round(max(min(mask_count, initial_mask), final_mask)))
 
     def _save_run_parameters(self):
@@ -202,32 +179,20 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
     def _terminate_process_group(self, process):
         """终止进程及其子进程"""
         try:
-            # 获取进程ID
-            pid = process.pid
-            
-            # 使用psutil获取进程对象
-            parent = psutil.Process(pid)
-            
-            # 获取所有子进程
+            pid = process.pid            
+            parent = psutil.Process(pid)    
             children = parent.children(recursive=True)
-            
-            # 先终止子进程
             for child in children:
                 try:
                     logger.debug(f"终止子进程 PID: {child.pid}")
                     child.terminate()
                 except psutil.NoSuchProcess:
                     pass
-            
-            # 终止父进程
             if process.poll() is None:
                 logger.debug(f"终止父进程 PID: {pid}")
                 process.terminate()
             
-            # 给进程一些时间来优雅地终止
             gone, alive = psutil.wait_procs(children + [parent], timeout=3)
-            
-            # 强制终止仍然存活的进程
             for p in alive:
                 try:
                     logger.warning(f"强制终止进程 PID: {p.pid}")
@@ -256,7 +221,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         env["PYTHONHASHSEED"] = seed_value
         process = None
         try:
-            # 创建进程组以便于管理
             process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.PIPE,
@@ -264,31 +228,22 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 text=True, 
                 cwd=str(self.project_root),
                 env=env,
-                preexec_fn=os.setsid,  # 创建新的进程组
+                preexec_fn=os.setsid,  
                 close_fds=True
             )
-            
-            # 记录进程以便清理
             self._running_processes.append(process)
             
-            # 实现超时管理
             start_time = time.time()
-            timeout = 3600  # 1小时超时
-            
+            timeout = 3600              
             stdout_data = []
             stderr_data = []
             
-            # 非阻塞读取输出
             import select
             while process.poll() is None:
-                # 检查是否超时
                 if time.time() - start_time > timeout:
                     logger.error(f"脚本 {script_path} 执行超时 (1小时)")
-                    # 终止整个进程组
                     self._terminate_process_group(process)
                     return False
-                
-                # 非阻塞读取输出
                 reads = [process.stdout.fileno(), process.stderr.fileno()]
                 ret = select.select(reads, [], [], 0.1)
                 
@@ -302,14 +257,11 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                         if data:
                             stderr_data.append(data)
             
-            # 读取剩余输出
             stdout, stderr = process.communicate()
             if stdout:
                 stdout_data.append(stdout)
             if stderr:
                 stderr_data.append(stderr)
-            
-            # 从进程列表中移除
             if process in self._running_processes:
                 self._running_processes.remove(process)
             
@@ -350,20 +302,13 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         """
         import time
         import random
-        
-        # 添加随机延迟，避免多进程同时访问文件
         time.sleep(random.uniform(0.1, 0.5))
         
         temp_output_file = None
-        try:
-            # 使用生成器而不是一次性加载所有内容到内存
+        try:           
             unique_smiles = set()
-            
-            # 记录临时文件以便清理
             temp_output_file = output_file + f".tmp_{os.getpid()}_{int(time.time())}"
             self._temp_files.add(temp_output_file)
-            
-            # 分批处理大文件
             batch_size = 10000
             current_batch = set()
             i = 0
@@ -380,24 +325,16 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                     
                     unique_smiles.add(smiles)
                     current_batch.add(smiles)
-                    
-                    # 每处理batch_size个分子，写入一次文件
                     if len(current_batch) >= batch_size:
                         for smiles in sorted(current_batch):
                             out.write(f"{smiles}\tligand_id_{i}\n")
                             i += 1
                         current_batch.clear()
-                
-                # 写入最后一批
                 for smiles in sorted(current_batch):
                     out.write(f"{smiles}\tligand_id_{i}\n")
                     i += 1
-            
-            # 原子性重命名
             import shutil
             shutil.move(temp_output_file, output_file)
-            
-            # 从临时文件列表中移除
             self._temp_files.discard(temp_output_file)
             
             logger.info(f"去重完成: {len(unique_smiles)} 个独特分子保存到 {output_file}")
@@ -426,10 +363,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             return False
 
     def _execute_ga_stage(self, ga_op_name: str, ga_script: str, input_pool_file: str, raw_output_file: str, filtered_output_file: str) -> bool:
-        """辅助函数，用于运行一个GA阶段（如交叉）及其后续的过滤。"""
-        logger.info(f"开始执行 {ga_op_name}...")
         
-        # 运行GA操作
+        logger.info(f"开始执行 {ga_op_name}...")        
         ga_succeeded = self._run_script(ga_script, [
             '--smiles_file', input_pool_file,
             '--output_file', raw_output_file,
@@ -438,8 +373,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if not ga_succeeded:
             logger.error(f"'{ga_op_name}' 脚本执行失败。")
             return False
-
-        # 运行过滤器
         filter_succeeded = self._run_script('operations/filter/filter.py', [
             '--smiles_file', raw_output_file,
             '--output_file', filtered_output_file
@@ -463,9 +396,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         logger.info(f"第 {generation} 代: 开始分解和掩码...")
         gen_dir = self.output_dir / f"generation_{generation}"
         gen_dir.mkdir(exist_ok=True)
-        masked_fragments_file = gen_dir / "masked_fragments.smi"        
+        masked_fragments_file = gen_dir / "masked_fragments.smi"    
         
-        # 检查是否启用动态掩码
         if self.dynamic_masking_config.get('enable', False):
             logger.info(f"第 {generation} 代: 使用动态掩码策略")
             # 动态掩码模式下，参数由被调用的脚本内部处理
@@ -477,15 +409,13 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 '--enable_dynamic_masking' # 添加一个明确的标志
             ]
         else:
-            # 固定掩码模式
             n_mask = self._get_dynamic_mask_count(generation)
             logger.info(f"第 {generation} 代: 使用固定掩码数 n_mask = {n_mask}")
             decompose_args = [
                 '--input', parent_smiles_file,
                 '--output3', str(masked_fragments_file),
                 '--mask_fragments', str(n_mask)
-            ]
-        
+            ]        
         if not self._run_script('datasets/decompose/frags.py', decompose_args):
             logger.error(f"第 {generation} 代: 分解和掩码失败。")
             return None        
@@ -499,42 +429,39 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
 
     def run_gpt_generation(self, masked_fragments_file: str, generation: int) -> Optional[str]:
         """
-        使用GPT模型生成新分子。        
+        使用MLM生成新分子。        
         Args:
             masked_fragments_file (str): 掩码片段文件路径。
             generation (int): 当前代数。            
         Returns:
-            Optional[str]: 成功则返回GPT生成的新分子文件路径,失败则返回None。
+            Optional[str]: 成功则返回MLM生成的新分子文件路径,失败则返回None。
         """
-        logger.info(f"第 {generation} 代: 开始GPT生成...")
+        logger.info(f"第 {generation} 代: 开始MLM生成...")
         gen_dir = self.output_dir / f"generation_{generation}"
-        gpt_output_dir = gen_dir / "gpt_generated"
-        gpt_output_dir.mkdir(exist_ok=True)        
+        mlm_output_dir = gen_dir / "mlm_generated"
+        mlm_output_dir.mkdir(exist_ok=True)
         
-        gpt_config = self.config.get('gpt', {})
-        seed = gpt_config.get('seed', generation) # 使用代数作为种子以保证可复现性        
-        
-        # 定义GPT输出文件路径，不再硬编码和移动文件
-        gpt_generated_file = gpt_output_dir / "gpt_generated_molecules.smi"
-        gpt_args = [
+        mlm_config = self.config.get('mlm') or self.config.get('gpt', {})
+        seed = mlm_config.get('seed', generation) 
+        mlm_generated_file = mlm_output_dir / "mlm_generated_molecules.smi"
+        mlm_args = [
             '--input_file', masked_fragments_file,
             '--seed', str(seed),
-            '--output_file', str(gpt_generated_file)  # 直接传递输出路径
+            '--output_file', str(mlm_generated_file),
+            '--config_file', self.config_path,
         ]
 
-        if not self._run_script('fragmlm/generate_all.py', gpt_args):
-            logger.error(f"第 {generation} 代: GPT生成脚本执行失败。")
+        if not self._run_script('fragmlm/generate_all.py', mlm_args):
+            logger.error(f"第 {generation} 代: MLM生成脚本执行失败。")
             return None        
 
-        # 检查指定的输出文件是否已生成且不为空
-        generated_count = self._count_molecules(str(gpt_generated_file))
+        generated_count = self._count_molecules(str(mlm_generated_file))
         if generated_count == 0:
-            logger.warning(f"第 {generation} 代: GPT生成了0个有效分子。")
-            # 不认为是致命错误，可以继续执行GA
+            logger.warning(f"第 {generation} 代: MLM生成了0个有效分子。")          
             return None
             
-        logger.info(f"第 {generation} 代: GPT生成完成,产出 {generated_count} 个新分子。")
-        return str(gpt_generated_file)
+        logger.info(f"第 {generation} 代: MLM生成完成,产出 {generated_count} 个新分子。")
+        return str(mlm_generated_file)
 
     def _combine_files(self, file_list: List[str], output_file: str) -> bool:
         """合并多个SMILES文件到一个文件"""
@@ -553,13 +480,13 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             logger.error(f"合并文件时发生错误: {e}")
             return False
 
-    def run_ga_operations(self, parent_smiles_file: str, gpt_generated_file: Optional[str], generation: int) -> Optional[Tuple[str, str]]:
+    def run_ga_operations(self, parent_smiles_file: str, mlm_generated_file: Optional[str], generation: int) -> Optional[Tuple[str, str]]:
         """
         串行执行遗传算法操作（交叉和突变）以避免死锁。
         
         Args:
             parent_smiles_file (str): 父代SMILES文件路径。
-            gpt_generated_file (Optional[str]): GPT生成的SMILES文件路径。
+            mlm_generated_file (Optional[str]): MLM生成的SMILES文件路径。
             generation (int): 当前代数。
             
         Returns:
@@ -568,14 +495,14 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         logger.info(f"第 {generation} 代: 开始串行执行遗传算法操作...")
         gen_dir = self.output_dir / f"generation_{generation}"
 
-        # 1. 合并父代和GPT产出，作为GA操作的输入
+        # 1. 合并父代和MLM产出，作为GA操作的输入
         ga_input_pool_file = gen_dir / "ga_input_pool.smi"
         files_to_combine = [parent_smiles_file]
-        if gpt_generated_file:
-            files_to_combine.append(gpt_generated_file)
+        if mlm_generated_file:
+            files_to_combine.append(mlm_generated_file)
         
         if not self._combine_files(files_to_combine, str(ga_input_pool_file)):
-            logger.error(f"第 {generation} 代: 合并父代和GPT产出失败。")
+            logger.error(f"第 {generation} 代: 合并父代和MLM产出失败。")
             return None
         logger.info(f"第 {generation} 代: GA操作输入池已创建,共 {self._count_molecules(str(ga_input_pool_file))} 个分子。")
 
@@ -584,8 +511,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         crossover_filtered_file = gen_dir / "crossover_filtered.smi"
         mutation_raw_file = gen_dir / "mutation_raw.smi"
         mutation_filtered_file = gen_dir / "mutation_filtered.smi"
-
-        # 执行交叉操作
+      
         logger.info(f"第 {generation} 代: 开始交叉操作...")
         crossover_success = self._execute_ga_stage(
             "交叉", 'operations/crossover/crossover_finetune.py',
@@ -594,9 +520,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         
         if not crossover_success:
             logger.error(f"第 {generation} 代: 交叉操作失败。")
-            return None
-
-        # 执行变异操作
+            return None       
         logger.info(f"第 {generation} 代: 开始变异操作...")
         mutation_success = self._execute_ga_stage(
             "突变", 'operations/mutation/mutation_finetune.py',
@@ -638,18 +562,15 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             str(offspring_formatted_file)
         )
         if offspring_count == 0:
-            logger.warning(f"第 {generation} 代: 经过滤和去重后，无有效子代分子。")
-            # 创建一个空的对接文件，避免后续对接步骤
+            logger.warning(f"第 {generation} 代: 经过滤和去重后，无有效子代分子。")         
             offspring_docked_file = gen_dir / "offspring_docked.smi"
-            open(offspring_docked_file, 'a').close()  # 创建一个空文件
+            open(offspring_docked_file, 'a').close()  
             return str(offspring_docked_file)
-
         logger.info(f"子代格式化完成: 共 {offspring_count} 个独特分子准备对接。")
 
         # 3. 对子代进行对接
-        offspring_docked_file = gen_dir / "offspring_docked.smi"
-        
-        # 显式传递处理器数量
+        offspring_docked_file = gen_dir / "offspring_docked.smi"        
+       
         num_processors = self.config.get('performance', {}).get('number_of_processors')
         
         docking_args = [
@@ -660,8 +581,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         ]
         if self.receptor_name:
             docking_args.extend(['--receptor', self.receptor_name])
-        
-        # 将处理器数量添加到命令行参数中
         if num_processors is not None:
             docking_args.extend(['--number_of_processors', str(num_processors)])
             
@@ -708,9 +627,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         elif selection_mode == 'multi_objective':
             logger.info("执行多目标选择...")
             multi_obj_config = selection_config.get('multi_objective_settings', {})
-            n_select = multi_obj_config.get('n_select', 100)
-            
-            # 检查是否启用增强选择策略
+            n_select = multi_obj_config.get('n_select', 100)           
             enhanced_strategy = multi_obj_config.get('enhanced_strategy', 'standard')
             
             if enhanced_strategy == 'adaptive':
@@ -817,7 +734,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             logger.critical(f"工作流执行过程中发生严重错误: {e}", exc_info=True)
             return False
         finally:
-            # 确保资源被释放
             self.cleanup_resources()
 
     def run_initial_generation(self) -> Optional[str]:
@@ -883,59 +799,54 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         logger.info(f"========== 开始第 {generation} 代进化 ==========")
         gen_dir = self.output_dir / f"generation_{generation}"
         gen_dir.mkdir(exist_ok=True)
-        
-        try:
-            # 1. 从父代对接文件中提取纯SMILES
-            parent_smiles_file = gen_dir / "current_parent_smiles.smi"
-            if not self._extract_smiles_from_docked_file(current_parents_docked_file, str(parent_smiles_file)):
-                logger.error(f"第{generation}代: 无法从父代文件提取SMILES,工作流终止")
-                return None
 
-            # 2. 分解与掩码
-            masked_file = self.run_decomposition_and_masking(str(parent_smiles_file), generation)
-            if not masked_file:
-                # 如果分解失败，可以决定是终止还是跳过GPT步骤
-                logger.warning(f"第{generation}代: 分解掩码步骤失败,将跳过GPT生成。")
-                gpt_generated_file = None
-            else:
-                # 3. GPT生成
-                gpt_generated_file = self.run_gpt_generation(masked_file, generation)
-
-            # 4. 遗传操作
-            ga_children_files = self.run_ga_operations(str(parent_smiles_file), gpt_generated_file, generation)
-            if not ga_children_files:
-                logger.error(f"第{generation}代: 遗传操作失败，工作流终止。")
-                return None
-            
-            crossover_file, mutation_file = ga_children_files
-
-            # 5. 子代评估（对接，但不进行评分分析）
-            offspring_docked_file = self.run_offspring_evaluation(crossover_file, mutation_file, generation)
-            if offspring_docked_file is None:
-                logger.error(f"第{generation}代: 子代评估失败，工作流终止。")
-                return None
-
-            # 6. 选择
-            next_parents_docked_file = self.run_selection(
-                current_parents_docked_file, 
-                offspring_docked_file, 
-                generation
-            )
-            if not next_parents_docked_file:
-                logger.error(f"第{generation}代: 选择操作失败，工作流终止。")
-                return None
-
-            # 7. 对选择后的精英种群进行评分分析（这是新的逻辑）
-            self.run_selected_population_evaluation(next_parents_docked_file, generation)
-
-            # 8. 清理临时文件（如果启用）
-            self._cleanup_generation_files(generation)
-
-            logger.info(f"========== 第 {generation} 代进化完成 ==========")
-            return next_parents_docked_file
-        except Exception as e:
-            logger.error(f"第 {generation} 代处理过程中发生错误: {e}", exc_info=True)
+        # 1. 从父代对接文件中提取纯SMILES
+        parent_smiles_file = gen_dir / "current_parent_smiles.smi"
+        if not self._extract_smiles_from_docked_file(current_parents_docked_file, str(parent_smiles_file)):
+            logger.error(f"第{generation}代: 无法从父代文件提取SMILES,工作流终止")
             return None
+
+        # 2. 分解与掩码
+        masked_file = self.run_decomposition_and_masking(str(parent_smiles_file), generation)
+        if not masked_file:
+            logger.warning(f"第{generation}代: 分解掩码步骤失败,将跳过MLM生成。")
+            mlm_generated_file = None
+        else:
+            # 3. MLM生成
+            mlm_generated_file = self.run_gpt_generation(masked_file, generation)
+
+        # 4. 遗传操作
+        ga_children_files = self.run_ga_operations(str(parent_smiles_file), mlm_generated_file, generation)
+        if not ga_children_files:
+            logger.error(f"第{generation}代: 遗传操作失败，工作流终止。")
+            return None
+
+        crossover_file, mutation_file = ga_children_files
+
+        # 5. 子代评估（对接，但不进行评分分析）
+        offspring_docked_file = self.run_offspring_evaluation(crossover_file, mutation_file, generation)
+        if offspring_docked_file is None:
+            logger.error(f"第{generation}代: 子代评估失败，工作流终止。")
+            return None
+
+        # 6. 选择
+        next_parents_docked_file = self.run_selection(
+            current_parents_docked_file,
+            offspring_docked_file,
+            generation
+        )
+        if not next_parents_docked_file:
+            logger.error(f"第{generation}代: 选择操作失败，工作流终止。")
+            return None
+
+        # 7. 对选择后的精英种群进行评分分析
+        self.run_selected_population_evaluation(next_parents_docked_file, generation)
+
+        # 8. 清理临时文件（如果启用）
+        self._cleanup_generation_files(generation)
+
+        logger.info(f"========== 第 {generation} 代进化完成 ==========")
+        return next_parents_docked_file
 
     def _cleanup_generation_files(self, generation_num: int):
         """
@@ -959,7 +870,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 gen_dir / "ligands3D_PDBs",
                 gen_dir / "docking_results" / "ligands",
                 gen_dir / "docking_results" / "ligands3D_SDFs",
-                gen_dir / "gpt_generated" / "docking_files"
+                gen_dir / "mlm_generated" / "docking_files"
             ]
             
             for temp_dir in temp_dirs_to_clean:
@@ -1002,27 +913,20 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         except (NotImplementedError, AttributeError):
             available_cores = 1
             
-        if configured_processors is None:
-            # 如果未配置，使用所有可用核心
+        if configured_processors is None:          
             return available_cores
         elif isinstance(configured_processors, int):
-            if configured_processors <= 0:
-                # 如果配置为0或负数，使用所有可用核心
+            if configured_processors <= 0:               
                 return available_cores
             else:
-                # 使用配置的数量，但不超过可用核心数
                 return min(configured_processors, available_cores)
         else:
-            # 配置格式错误，使用默认值
             logger.warning(f"处理器数量配置格式错误: {configured_processors}，使用默认值1")
             return 1
 
-# --- 主函数入口 ---
+
 def main():
-    """主函数，用于解析命令行参数和启动工作流"""
     import argparse
-    
-    # 设置信号处理，确保在程序被中断时清理资源
     def signal_handler(sig, frame):
         logger.info("接收到中断信号，正在清理资源...")
         sys.exit(0)
@@ -1054,7 +958,6 @@ def main():
         logger.critical(f"工作流执行过程中发生严重错误: {e}", exc_info=True)
         return 1
     finally:
-        # 确保清理所有子进程
         try:
             current_process = psutil.Process(os.getpid())
             children = current_process.children(recursive=True)

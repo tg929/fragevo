@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-FragEvo workflow executor (Comp Score selection variant)
-========================================================
-This module reuses the full FragEvo workflow and only replaces the selection
-stage with a new Comp Score based selector that computes:
+FragEvo workflow executor 
 
-  y = DS_hat * QED * SA_hat
-
-All other steps (decomposition/masking, GPT generation, GA ops, docking,
-evaluation, cleanup, etc.) remain identical to the finetune executor.
 """
 
 import os
