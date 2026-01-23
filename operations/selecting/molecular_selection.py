@@ -16,17 +16,19 @@ import argparse
 from pathlib import Path
 from typing import List, Dict
 import json
+import re
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 使用本地实现的选择算法模块
 from operations.selecting.ranking import rank_selection
 from operations.selecting.ranking import roulette_selection  
 from operations.selecting.ranking import tournament_selection
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+_FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 
 def load_molecules_with_scores(docked_file: str) -> List[List[str]]:
     """
@@ -46,11 +48,12 @@ def load_molecules_with_scores(docked_file: str) -> List[List[str]]:
                 parts = line.split()
                 if len(parts) >= 2:
                     smiles = parts[0]
-                    try:
-                        docking_score = float(parts[1])
+                    score_str = parts[1]
+                    if _FLOAT_RE.fullmatch(score_str):
+                        docking_score = float(score_str)
                         # autogrow格式: [SMILES, name, docking_score], 确保分数为float
                         molecules.append([smiles, f"mol_{idx}", docking_score])
-                    except ValueError:
+                    else:
                         logger.warning(f"无法解析分数 {parts[1]} for SMILES {smiles}")
     
     logger.info(f"成功加载 {len(molecules)} 个分子")
@@ -67,23 +70,19 @@ def merge_and_deduplicate_populations(child_molecules: List[List[str]],
     
     Returns:
         合并并去重后的分子列表
-    """
-    # 使用字典来去重，key为SMILES，value为完整的分子信息
-    # 如果同一个SMILES有不同分数，保留分数更好的（更小的）
+    """    
     merged_dict = {}
-    
-    # 先添加子代分子
+   
     for mol in child_molecules:
         smiles = mol[0]
-        score = mol[2] # 分数已经是float
+        score = mol[2] 
         if smiles not in merged_dict or score < merged_dict[smiles][2]:
             merged_dict[smiles] = mol
     
-    # 如果有父代分子，添加父代分子（保持去重逻辑）
     if parent_molecules:
         for mol in parent_molecules:
             smiles = mol[0]
-            score = mol[2] # 分数已经是float
+            score = mol[2] 
             if smiles not in merged_dict or score < merged_dict[smiles][2]:
                 merged_dict[smiles] = mol
     
@@ -125,57 +124,31 @@ def select_molecules_by_algorithm(molecules_data: List[List[str]],
     
     logger.info(f"使用 {selector_choice} 从 {len(molecules_data)} 个候选中选择 {n_select} 个分子")
     
-    try:
-        if selector_choice == "Rank_Selector":
-            # 排名选择：基于对接分数排名，选择最优的N个
-            # column_idx_to_select=-1表示使用最后一列(docking_score)
-            # reverse_sort=False表示升序排序（对接分数越小越好）
-            selected_smiles = rank_selection.run_rank_selector(
-                molecules_data, n_select, -1, False
-            )
-            # 从选中的SMILES找回完整的分子信息
-            smiles_to_mol = {mol[0]: mol for mol in molecules_data}
-            selected_molecules = [smiles_to_mol[smiles] for smiles in selected_smiles if smiles in smiles_to_mol]
-            
-        elif selector_choice == "Roulette_Selector":
-            # 轮盘赌选择：基于对接分数的加权随机选择
-            numpy_result = roulette_selection.spin_roulette_selector(
-                molecules_data, n_select, "docking"
-            )
-            # spin_roulette_selector返回numpy数组，需要转换为列表
-            selected_smiles = numpy_result.tolist()
-            # 从选中的SMILES找回完整的分子信息
-            smiles_to_mol = {mol[0]: mol for mol in molecules_data}
-            selected_molecules = [smiles_to_mol[smiles] for smiles in selected_smiles if smiles in smiles_to_mol]
-            
-        elif selector_choice == "Tournament_Selector":
-            # 锦标赛选择：随机分组竞赛选择
-            # idx_to_sel=-1表示使用最后一列(docking_score)
-            # favor_most_negative=True表示对接分数越小越好
-            selected_molecules = tournament_selection.run_tournament_selector(
-                molecules_data, n_select, tourn_size, -1, True
-            )
-            # Tournament_Selector直接返回完整的分子信息
-            
-        else:
-            raise ValueError(f"不支持的选择算法: {selector_choice}")
-        
-        logger.info(f"{selector_choice} 选择完成：成功选出 {len(selected_molecules)} 个分子")
-        return selected_molecules
-        
-    except Exception as e:
-        logger.error(f"选择算法执行失败: {e}")
-        return []
+    if selector_choice == "Rank_Selector":
+        selected_smiles = rank_selection.run_rank_selector(molecules_data, n_select, -1, False)
+        smiles_to_mol = {mol[0]: mol for mol in molecules_data}
+        selected_molecules = [smiles_to_mol[smiles] for smiles in selected_smiles if smiles in smiles_to_mol]
+    elif selector_choice == "Roulette_Selector":
+        selected_smiles = roulette_selection.spin_roulette_selector(molecules_data, n_select, "docking").tolist()
+        smiles_to_mol = {mol[0]: mol for mol in molecules_data}
+        selected_molecules = [smiles_to_mol[smiles] for smiles in selected_smiles if smiles in smiles_to_mol]
+    elif selector_choice == "Tournament_Selector":
+        selected_molecules = tournament_selection.run_tournament_selector(molecules_data, n_select, tourn_size, -1, True)
+    else:
+        raise ValueError(f"不支持的选择算法: {selector_choice}")
+
+    logger.info(f"{selector_choice} 选择完成：成功选出 {len(selected_molecules)} 个分子")
+    return selected_molecules
 
 def save_selected_molecules_with_scores(selected_molecules: List[List[str]], output_file: str):
     """将选中的分子及其分数保存到文件，按对接分数排序（分数越低越好排在前面），格式为: SMILES score"""
-    # 按对接分数排序（分数越低越好，升序排列）
+
     sorted_molecules = sorted(selected_molecules, key=lambda mol: float(mol[2]))
     
     with open(output_file, 'w') as f:
         for mol in sorted_molecules:
             smiles = mol[0]
-            score = mol[2]  # 对接分数
+            score = mol[2]  
             f.write(f"{smiles}\t{score}\n")
     logger.info(f"已保存 {len(sorted_molecules)} 个选中的分子(带分数，已按对接分数排序)到 {output_file}")
 
@@ -212,42 +185,31 @@ def main():
     
     args = parser.parse_args()
 
-    # 从配置文件加载参数
-    try:
-        with open(args.config_file, 'r') as f:
-            config = json.load(f)
-            
-        # 智能适配不同配置文件结构
-        # 优先尝试新的FragEvo配置结构 (selection.single_objective_settings)
-        selection_config = config.get("selection", {})
-        single_obj_settings = selection_config.get("single_objective_settings", {})
-        
-        if single_obj_settings:
-            # FragEvo版本：使用selection.single_objective_settings
-            logger.info("检测到FragEvo配置文件格式")
-            n_select = single_obj_settings.get('n_select', 100)
-            selector_choice_default = single_obj_settings.get('selector_choice', 'Rank_Selector')
-            tourn_size = single_obj_settings.get('tourn_size', 0.1)
-        else:
-            # GA版本：回退到molecular_selection配置块
-            molecular_selection_config = config.get("molecular_selection", {})
-            if molecular_selection_config:
-                logger.info("检测到GA版本配置文件格式")
-                n_select = molecular_selection_config.get('n_select', 100)
-                selector_choice_default = molecular_selection_config.get('selector_choice', 'Rank_Selector')
-                tourn_size = molecular_selection_config.get('tourn_size', 0.1)
-            else:
-                # 使用默认值
-                logger.warning("未检测到已知的配置格式，使用默认参数")
-                n_select = 100
-                selector_choice_default = 'Rank_Selector'
-                tourn_size = 0.1
-        
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        logger.error(f"无法加载或解析配置文件 {args.config_file}: {e}")
-        return
+    if not os.path.exists(args.config_file):
+        raise FileNotFoundError(f"无法加载配置文件 {args.config_file}")
+    with open(args.config_file, "r") as f:
+        config = json.load(f)
 
-    # 动态选择器决策逻辑：优先使用override参数，否则使用配置文件
+    selection_config = config.get("selection", {})
+    single_obj_settings = selection_config.get("single_objective_settings", {})
+
+    if single_obj_settings:
+        logger.info("检测到FragEvo配置文件格式")
+        n_select = single_obj_settings.get('n_select', 100)
+        selector_choice_default = single_obj_settings.get('selector_choice', 'Rank_Selector')
+        tourn_size = single_obj_settings.get('tourn_size', 0.1)
+    else:
+        molecular_selection_config = config.get("molecular_selection", {})
+        if molecular_selection_config:
+            logger.info("检测到GA版本配置文件格式")
+            n_select = molecular_selection_config.get('n_select', 100)
+            selector_choice_default = molecular_selection_config.get('selector_choice', 'Rank_Selector')
+            tourn_size = molecular_selection_config.get('tourn_size', 0.1)
+        else:
+            logger.warning("未检测到已知的配置格式，使用默认参数")
+            n_select = 100
+            selector_choice_default = 'Rank_Selector'
+            tourn_size = 0.1
     if args.selector_override:
         selector_choice = args.selector_override
         logger.info(f"使用外部指定的选择器: {selector_choice}")
