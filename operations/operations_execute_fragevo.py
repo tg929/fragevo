@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-FragEvo 混合工作流执行脚本
-==========================
-1. 种群初始化和评估
-2. 基于父代的分子分解与掩码
-3. 使用GPT模型生成新的、多样化的分子
-4. 对父代和GPT生成的分子进行遗传算法操作(交叉、突变)
-5. 对新生成的子代进行评估
-6. 通过选择策略（单目标或多目标）筛选出下一代种群
-7. 继续迭代
+FragEvo 工作流执行脚本
+
 """
 import os
 import sys
 import json
+import re
 import subprocess
 import logging
 from pathlib import Path
@@ -23,7 +17,8 @@ import queue
 import csv
 import hashlib
 import random
-from operations.stating.config_snapshot_generator import save_config_snapshot #保存参数（快照）
+import time
+from operations.stating.config_snapshot_generator import save_config_snapshot 
 import multiprocessing  
 import shutil  
 from rdkit import Chem
@@ -33,18 +28,17 @@ from utils.chem_metrics import ChemMetricCache
 # 移除全局日志配置，避免多进程日志冲突
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-# 确保logger有基本的handler，但不会与其他进程冲突
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent #Path(__file__).resolve()：当前脚本目录/地址/data1/ytg/medium_models/FragEvo/operations/operations_execute_fragevo.py  .resolve()：将相对路径转换为绝对路径 
-                                                             #整个项目地址：/data1/ytg/medium_models/FragEvo
-sys.path.insert(0, str(PROJECT_ROOT))#0：添加目录到搜索列表最前面
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
+_FLOAT_RE = re.compile(r"[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?$")
 
-class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在调用这个类
+class FragEvoWorkflowExecutor:   
     def __init__(self, config_path: str, receptor_name: Optional[str] = None, output_dir_override: Optional[str] = None, num_processors_override: Optional[int] = None):
         """
         初始化FragEvo工作流执行器。        
@@ -55,9 +49,9 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             num_processors_override (Optional[int]): 覆盖配置文件中的处理器数量。
         """
         self.config_path = config_path
-        self.config = self._load_config()        
-        # 应用处理器数量覆盖
-        if num_processors_override is not None:#有自定义处理器数量设置
+        self.config = self._load_config()      
+
+        if num_processors_override is not None: 
             self.config['performance']['number_of_processors'] = num_processors_override
             logger.info(f"运行时覆盖处理器数量为: {num_processors_override}")
             
@@ -81,7 +75,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         logger.info(f"FragEvo工作流初始化完成, 输出目录: {self.output_dir}")
         logger.info(f"最大迭代代数: {self.max_generations}")
 
-    def _load_config(self) -> dict:#加载配置文件
+    def _load_config(self) -> dict:
         with open(self.config_path, 'r', encoding='utf-8') as f:
             return json.load(f)       
 
@@ -89,45 +83,37 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         self.project_root = Path(self.config.get('paths', {}).get('project_root', PROJECT_ROOT))
         workflow_config = self.config.get('workflow', {})
         seed_value = workflow_config.get("seed", 42)
-        try:
-            self.seed = int(seed_value)
-        except (TypeError, ValueError):
-            self.seed = 42
+        seed_str = str(seed_value).strip()
+        self.seed = int(seed_str) if re.fullmatch(r"-?\d+", seed_str) else 42
         random.seed(self.seed)
         self.run_params["seed"] = self.seed
         gpt_config = self.config.get('gpt', {})
         self.dynamic_masking_config = gpt_config.get('dynamic_masking', {'enable': False})
         self.enable_lineage_tracking = bool(workflow_config.get("enable_lineage_tracking", False))
-        self.run_params["enable_lineage_tracking"] = self.enable_lineage_tracking
-        # 记录配置和根目录
+        self.run_params["enable_lineage_tracking"] = self.enable_lineage_tracking   
         self.run_params['config_file_path'] = self.config_path
-        self.run_params['project_root'] = str(self.project_root)
-        # 确定输出目录
+        self.run_params['project_root'] = str(self.project_root)        
         if output_dir_override:
             output_dir_name = output_dir_override
         else:
             output_dir_name = workflow_config.get('output_directory', 'FragEvo_output')
         base_output_dir = self.project_root / output_dir_name
-        self.run_params['base_output_dir'] = str(base_output_dir)
-        # 根据受体确定最终运行目录
+        self.run_params['base_output_dir'] = str(base_output_dir)        
         self.receptor_name = receptor_name
         if self.receptor_name:
             self.output_dir = base_output_dir / self.receptor_name
             self.run_params['receptor_name'] = self.receptor_name
         else:
-            # 如果没有指定受体，使用默认或创建一个通用运行目录
             default_receptor_info = self.config.get('receptors', {}).get('default_receptor', {})
             default_receptor_name = default_receptor_info.get('name', 'default_run')
             self.output_dir = base_output_dir / default_receptor_name
             self.run_params['receptor_name'] = default_receptor_name
         self.run_params['run_specific_output_dir'] = str(self.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        # 加载GA和GPT的核心参数
         self.max_generations = workflow_config.get('max_generations', 10)
         self.initial_population_file = workflow_config.get('initial_population_file')
         self.run_params['max_generations'] = self.max_generations
         self.run_params['initial_population_file'] = self.initial_population_file
-        # 记录选择模式
         selection_config = self.config.get('selection', {})
         self.run_params['selection_mode'] = selection_config.get('selection_mode', 'single_objective')
     def _get_dynamic_mask_count(self, generation: int) -> int:
@@ -140,19 +126,13 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             int: 应该用于掩码的片段数量。
         """
         if not self.dynamic_masking_config.get('enable', False) or self.max_generations <= 1:
-            # 如果不启用或总代数只有1代，则使用固定的值
             return self.config.get('gpt', {}).get('n_fragments_to_mask', 1)        
         initial_mask = self.dynamic_masking_config.get('initial_mask_fragments', 2)
-        final_mask = self.dynamic_masking_config.get('final_mask_fragments', 1)        
-        # 使用线性插值计算当前代数的掩码数
-        # y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
-        # 这里 x=generation, x1=1, y1=initial_mask, x2=max_generations, y2=final_mask        
-        # 防止除以零
+        final_mask = self.dynamic_masking_config.get('final_mask_fragments', 1)
         if self.max_generations == 1:
             return initial_mask            
         progress = (generation - 1) / (self.max_generations - 1)
-        mask_count = initial_mask + progress * (final_mask - initial_mask)        
-        # 四舍五入到最近的整数，并确保结果在[final_mask, initial_mask]范围内
+        mask_count = initial_mask + progress * (final_mask - initial_mask)  
         return int(round(max(min(mask_count, initial_mask), final_mask)))
     def _save_run_parameters(self):
         """保存本次运行的完整参数快照。"""
@@ -175,14 +155,11 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         else:
             path = None
         if path and path.exists():
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-                logger.warning("血统跟踪文件格式异常，已忽略原有记录。")
-            except Exception as exc:
-                logger.warning(f"无法加载血统跟踪文件 {path}: {exc}")
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            logger.warning("血统跟踪文件格式异常，已忽略原有记录。")
         return {}
     def _save_lineage_tracker(self) -> None:
         """将血统跟踪记录持久化到磁盘。"""
@@ -190,11 +167,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             return
         if not self.lineage_tracker_path:
             return
-        try:
-            with open(self.lineage_tracker_path, 'w', encoding='utf-8') as f:
-                json.dump(self.lineage_tracker, f, indent=2, ensure_ascii=False)
-        except Exception as exc:
-            logger.error(f"保存血统跟踪文件失败: {exc}")
+        with open(self.lineage_tracker_path, 'w', encoding='utf-8') as f:
+            json.dump(self.lineage_tracker, f, indent=2, ensure_ascii=False)
     def _write_jsonl(self, output_path: Path, entries: List[Dict]) -> None:
         """将记录写入 JSONL 文件。"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,36 +180,27 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if not input_path or not input_path.exists():
             return []
         entries: List[Dict] = []
-        try:
-            with open(input_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        logger.warning(f"无法解析血统记录: {line}")
-        except Exception as exc:
-            logger.warning(f"读取血统文件 {input_path} 失败: {exc}")
+        with open(input_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entries.append(json.loads(line))
         return entries
     def _read_smiles_from_file(self, file_path: Path, first_column_only: bool = True) -> List[str]:
         """读取SMILES文件，默认只返回第一列。"""
         smiles: List[str] = []
         if not file_path or not file_path.exists():
             return smiles
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    parts = line.split()
-                    if not parts:
-                        continue
-                    smiles.append(parts[0] if first_column_only else parts)
-        except Exception as exc:
-            logger.warning(f"读取文件 {file_path} 时发生错误: {exc}")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if not parts:
+                    continue
+                smiles.append(parts[0] if first_column_only else parts)
         return smiles
 
     def _tokenize_smiles_sequence(self, smiles: str, include_eos: bool = True) -> Optional[str]:
@@ -246,25 +211,22 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         frag_count: Optional[int] = None
         fragments: List[str] = []
         if mol:
-            try:
-                result = break_into_fragments(mol, smiles)
-                fragments_candidate = None
-                if isinstance(result, tuple):
-                    if len(result) >= 3:
-                        fragments_candidate = result[1]
-                        frag_count = result[2]
-                    if (not fragments_candidate or isinstance(fragments_candidate, float)) and len(result) >= 4:
-                        fragments_candidate = result[3]
-                if isinstance(fragments_candidate, list):
-                    fragments = [frag for frag in fragments_candidate if isinstance(frag, str) and frag]
-                elif isinstance(fragments_candidate, str):
-                    fragments = [frag for frag in fragments_candidate.split() if frag]
-                else:
-                    fragments = []
-                if frag_count is None or frag_count <= 1:
-                    fragments = [smiles] if not fragments else fragments
-            except Exception:
-                fragments = [smiles]
+            result = break_into_fragments(mol, smiles)
+            fragments_candidate = None
+            if isinstance(result, tuple):
+                if len(result) >= 3:
+                    fragments_candidate = result[1]
+                    frag_count = result[2]
+                if (not fragments_candidate or isinstance(fragments_candidate, float)) and len(result) >= 4:
+                    fragments_candidate = result[3]
+            if isinstance(fragments_candidate, list):
+                fragments = [frag for frag in fragments_candidate if isinstance(frag, str) and frag]
+            elif isinstance(fragments_candidate, str):
+                fragments = [frag for frag in fragments_candidate.split() if frag]
+            else:
+                fragments = []
+            if frag_count is None or frag_count <= 1:
+                fragments = [smiles] if not fragments else fragments
         else:
             fragments = [smiles]
         if not fragments:
@@ -291,30 +253,22 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
             output_path.touch()
             return
         lines: List[str] = []
-        try:
-            with open(src_path, 'r', encoding='utf-8') as src:
-                for line in src:
-                    stripped = line.strip()
-                    if not stripped:
+        with open(src_path, 'r', encoding='utf-8') as src:
+            for line in src:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if first_column_only:
+                    parts = stripped.split()
+                    if not parts:
                         continue
-                    if first_column_only:
-                        parts = stripped.split()
-                        if not parts:
-                            continue
-                        stripped = parts[0]
-                    tokenized = self._tokenize_smiles_sequence(stripped, include_eos=include_eos)
-                    if tokenized:
-                        lines.append(tokenized)
-        except Exception as exc:
-            logger.warning(f"读取来源文件 {src_path} 以生成序列格式时失败: {exc}")
-            output_path.touch()
-            return
-        try:
-            with open(output_path, 'w', encoding='utf-8') as dst:
-                for entry in lines:
-                    dst.write(entry + '\n')
-        except Exception as exc:
-            logger.warning(f"写入序列文件 {output_path} 时失败: {exc}")
+                    stripped = parts[0]
+                tokenized = self._tokenize_smiles_sequence(stripped, include_eos=include_eos)
+                if tokenized:
+                    lines.append(tokenized)
+        with open(output_path, 'w', encoding='utf-8') as dst:
+            for entry in lines:
+                dst.write(entry + '\n')
 
     def _copy_pre_tokenized_file(self, source_path: Optional[str], output_path: Path) -> None:
         """将已经是标记序列的文件复制到目标路径。"""
@@ -326,12 +280,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if not src_path.exists():
             output_path.touch()
             return
-        try:
-            with open(src_path, 'r', encoding='utf-8') as src, open(output_path, 'w', encoding='utf-8') as dst:
-                dst.writelines(src.readlines())
-        except Exception as exc:
-            logger.warning(f"复制标记序列文件 {src_path} 时失败: {exc}")
-            output_path.touch()
+        with open(src_path, 'r', encoding='utf-8') as src, open(output_path, 'w', encoding='utf-8') as dst:
+            dst.writelines(src.readlines())
 
     def _export_tokenized_representations(
         self,
@@ -521,10 +471,8 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 smiles = parts[0]
                 docking_score: Optional[float] = None
                 if len(parts) >= 2:
-                    try:
-                        docking_score = float(parts[1])
-                    except ValueError:
-                        docking_score = None
+                    score_str = parts[1].strip()
+                    docking_score = float(score_str) if _FLOAT_RE.fullmatch(score_str) else None
                 history = self._ensure_history(smiles, generation=generation)
                 mapping[smiles] = history
                 self._upsert_history_record(history, smiles, generation, docking_score, mark_active)
@@ -553,10 +501,12 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
     def _format_float(self, value: Optional[float]) -> str:
         if value is None:
             return ""
-        try:
+        if isinstance(value, (int, float)):
             return f"{float(value):.6f}"
-        except Exception:
-            return ""
+        value_str = str(value).strip()
+        if _FLOAT_RE.fullmatch(value_str):
+            return f"{float(value_str):.6f}"
+        return ""
     def _export_evomo_files(self) -> None:
         pop_file = self.output_dir / "pop.csv"
         removed_file = self.output_dir / "removed_ind_act_history.csv"
@@ -608,71 +558,55 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         env = os.environ.copy()
         seed_value = str(getattr(self, "seed", 42))
         env["PYTHONHASHSEED"] = seed_value
-        try:
-            with subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding='utf-8',
-                cwd=str(self.project_root),
-                env=env,
-                close_fds=True
-            ) as process:
-                
-                # 创建队列来从线程中接收输出
-                q_stdout = queue.Queue()
-                q_stderr = queue.Queue()
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            cwd=str(self.project_root),
+            env=env,
+            close_fds=True
+        ) as process:
+            q_stdout = queue.Queue()
+            q_stderr = queue.Queue()
 
-                # 创建并启动线程来实时读取输出
-                thread_stdout = threading.Thread(target=self._read_stream, args=(process.stdout, q_stdout))
-                thread_stderr = threading.Thread(target=self._read_stream, args=(process.stderr, q_stderr))
-                thread_stdout.start()
-                thread_stderr.start()
+            thread_stdout = threading.Thread(target=self._read_stream, args=(process.stdout, q_stdout))
+            thread_stderr = threading.Thread(target=self._read_stream, args=(process.stderr, q_stderr))
+            thread_stdout.start()
+            thread_stderr.start()
 
-                # 等待进程结束，设置超时
-                try:
-                    process.wait(timeout=3600)  # 1小时超时
-                except subprocess.TimeoutExpired:
-                    logger.error(f"Script {script_path} timed out (1 hour). Terminating...")
-                    process.kill()  # 强制杀死进程
-                    # 再等待一小段时间确保线程能读取完最后的信息
-                    thread_stdout.join(timeout=5)
-                    thread_stderr.join(timeout=5)
-                    # 记录日志并返回失败
-                    self._log_subprocess_output(script_path, q_stdout, q_stderr, "after timeout")
-                    return False
-                
-                # 进程正常结束后，等待读取线程完成
-                thread_stdout.join()
-                thread_stderr.join()
+            deadline = time.time() + 3600
+            while process.poll() is None and time.time() < deadline:
+                time.sleep(0.1)
 
-                # 收集并记录输出
-                stdout_str, stderr_str = self._log_subprocess_output(script_path, q_stdout, q_stderr, "final")
+            if process.poll() is None:
+                logger.error(f"Script {script_path} timed out (1 hour). Terminating...")
+                process.kill()
+                thread_stdout.join(timeout=5)
+                thread_stderr.join(timeout=5)
+                self._log_subprocess_output(script_path, q_stdout, q_stderr, "after timeout")
+                return False
 
-                if process.returncode == 0:
-                    logger.info(f"Script {script_path} executed successfully.")
-                    return True
-                else:
-                    logger.error(f"Script {script_path} failed with return code {process.returncode}.")
-                    # 在失败时，即使没有stderr，也记录stdout，可能包含线索
-                    if stderr_str:
-                        logger.error(f"Error output (stderr):\n{stderr_str}")
-                    if stdout_str:
-                        logger.error(f"Standard output (stdout):\n{stdout_str}")
-                    return False
-                    
-        except Exception as e:
-            logger.error(f"An exception occurred while trying to run script {script_path}: {e}", exc_info=True)
+            thread_stdout.join()
+            thread_stderr.join()
+
+            stdout_str, stderr_str = self._log_subprocess_output(script_path, q_stdout, q_stderr, "final")
+            if process.returncode == 0:
+                logger.info(f"Script {script_path} executed successfully.")
+                return True
+
+            logger.error(f"Script {script_path} failed with return code {process.returncode}.")
+            if stderr_str:
+                logger.error(f"Error output (stderr):\n{stderr_str}")
+            if stdout_str:
+                logger.error(f"Standard output (stdout):\n{stdout_str}")
             return False
 
     def _read_stream(self, stream, q: queue.Queue):
-        """实时读取流（stdout/stderr）并放入队列"""
-        try:
-            for line in iter(stream.readline, ''):
-                q.put(line)
-        finally:
-            stream.close()
+        for line in iter(stream.readline, ''):
+            q.put(line)
+        stream.close()
 
     def _log_subprocess_output(self, script_path: str, q_stdout: queue.Queue, q_stderr: queue.Queue, context: str) -> Tuple[str, str]:
         """从队列中收集并记录子进程的输出"""
@@ -707,8 +641,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         增加文件锁防护，避免并发访问冲突。
         """
         import time
-        import random
-        
+        import random        
         # 添加随机延迟，避免多进程同时访问文件
         time.sleep(random.uniform(0.1, 0.5))
         
@@ -721,9 +654,7 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                         smiles = parts[0]
                         if smiles:
                             unique_smiles.add(smiles)            
-            unique_smiles_list = sorted(list(unique_smiles))            
-            
-            # 使用临时文件写入，然后原子性重命名，避免写入冲突
+            unique_smiles_list = sorted(list(unique_smiles))   
             temp_output_file = output_file + f".tmp_{os.getpid()}_{int(time.time())}"
             with open(temp_output_file, 'w', encoding='utf-8') as f:
                 for i, smiles in enumerate(unique_smiles_list):
@@ -787,8 +718,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if not ga_succeeded:
             logger.error(f"'{ga_op_name}' 脚本执行失败。")
             return False, None
-
-        # 运行过滤器
         filter_succeeded = self._run_script('operations/filter/filter.py', [
             '--smiles_file', str(raw_output_file),
             '--output_file', str(filtered_output_file)
@@ -848,10 +777,9 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
                 '--output3', str(masked_fragments_file),
                 '--current_generation', str(generation),
                 '--max_generations', str(self.max_generations),
-                '--enable_dynamic_masking' # 添加一个明确的标志
+                '--enable_dynamic_masking'
             ]
         else:
-            # 固定掩码模式
             n_mask = self._get_dynamic_mask_count(generation)
             logger.info(f"第 {generation} 代: 使用固定掩码数 n_mask = {n_mask}")
             decompose_args = [
@@ -885,8 +813,6 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         gpt_output_dir.mkdir(exist_ok=True)        
         
         seed = getattr(self, "seed", 42)
-        
-        # 定义GPT输出文件路径，不再硬编码和移动文件
         gpt_generated_file = gpt_output_dir / "gpt_generated_molecules.smi"
         gpt_args = [
             '--input_file', masked_fragments_file,
@@ -897,12 +823,9 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         if not self._run_script('fragmlm/generate_all.py', gpt_args):
             logger.error(f"第 {generation} 代: GPT生成脚本执行失败。")
             return None        
-
-        # 检查指定的输出文件是否已生成且不为空
         generated_count = self._count_molecules(str(gpt_generated_file))
         if generated_count == 0:
-            logger.warning(f"第 {generation} 代: GPT生成了0个有效分子。")
-            # 不认为是致命错误，可以继续执行GA
+            logger.warning(f"第 {generation} 代: GPT生成了0个有效分子。")          
             return None
         gpt_smiles = self._read_smiles_from_file(gpt_generated_file)
         placeholder_root = self._create_generation_placeholder_root(generation)
@@ -1483,22 +1406,15 @@ class FragEvoWorkflowExecutor:    #工作流；主函数/入口文件就是在�
         except Exception as e:
             logger.warning(f"清理第 {generation_num} 代临时文件时出错: {e}")
 
-# --- 主函数入口 ---
-def main():
-    """主函数，用于解析命令行参数和启动工作流"""
+def main():  
     import argparse
     
     parser = argparse.ArgumentParser(description='FragEvo混合工作流执行器')
-    parser.add_argument('--config', type=str, 
-                       default='fragevo/config_example.json',
-                       help='--config')
-    parser.add_argument('--receptor', type=str, default=None,
-                       help='--receptor')
-    parser.add_argument('--output_dir', type=str, default=None,
-                       help='--output_dir')
+    parser.add_argument('--config', type=str, default='fragevo/config_example.json', help='--config')
+    parser.add_argument('--receptor', type=str, default=None,help='--receptor')
+    parser.add_argument('--output_dir', type=str, default=None,help='--output_dir')
     
-    args = parser.parse_args()
-    
+    args = parser.parse_args()    
     try:
         executor = FragEvoWorkflowExecutor(args.config, args.receptor, args.output_dir)
         success = executor.run_complete_workflow()
