@@ -2,9 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 分子对接工作流程模块 (finetune)
-================
-提供分子对接的核心功能，接受配置字典作为参数
-移除了参数解析和main函数,作为模块被主流程调用
 """
 import os
 import sys
@@ -21,11 +18,9 @@ sys.path.insert(0, PROJECT_ROOT)
 import logging
 from typing import Dict, Optional, Tuple, List
 
-# 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 导入必要的模块
 from autogrow.operators.convert_files.conversion_to_3d import convert_to_3d
 from autogrow.operators.convert_files.conversion_to_3d import convert_sdf_to_pdbs
 from autogrow.docking.docking_class.docking_file_conversion.convert_with_mgltools import MGLToolsConversion
@@ -42,23 +37,29 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from collections import defaultdict
 
-# 添加项目根目录到Python路径
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 导入CPU检测工具
 from utils.cpu_utils import get_available_cpu_cores
+
+def _run_cmd(cmd: List[str], timeout_seconds: int) -> bool:
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    deadline = time.time() + max(1, int(timeout_seconds))
+    while proc.poll() is None and time.time() < deadline:
+        time.sleep(0.05)
+    if proc.poll() is None:
+        proc.kill()
+        proc.wait()
+        return False
+    return proc.returncode == 0
 
 def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
     from rdkit import Chem
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return smiles
-        mol = Chem.RemoveHs(mol)
-        return Chem.MolToSmiles(mol, isomericSmiles=True)
-    except Exception:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
         return smiles
+    mol = Chem.RemoveHs(mol)
+    return Chem.MolToSmiles(mol, isomericSmiles=True)
 
 def _obabel_fast_vina_dock_single(
     idx: int,
@@ -87,20 +88,11 @@ def _obabel_fast_vina_dock_single(
     pdbqt_file = os.path.join(temp_dir, f"ligand_{pid}_{idx}.pdbqt")
     out_pdbqt = os.path.join(temp_dir, f"dock_{pid}_{idx}.pdbqt")
 
-    try:
-        subprocess.check_output(
-            [obabel_path, f"-:{smiles}", "--gen3D", "-O", mol_file],
-            stderr=subprocess.STDOUT,
-            timeout=gen3d_timeout,
-            universal_newlines=True,
-        )
-        subprocess.check_output(
-            [obabel_path, "-imol", mol_file, "-opdbqt", "-O", pdbqt_file],
-            stderr=subprocess.STDOUT,
-            timeout=convert_timeout,
-            universal_newlines=True,
-        )
+    ok = _run_cmd([obabel_path, f"-:{smiles}", "--gen3D", "-O", mol_file], gen3d_timeout)
+    if ok:
+        ok = _run_cmd([obabel_path, "-imol", mol_file, "-opdbqt", "-O", pdbqt_file], convert_timeout)
 
+    if ok:
         cmd = [
             vina_executable,
             "--receptor", receptor_pdbqt,
@@ -118,38 +110,20 @@ def _obabel_fast_vina_dock_single(
         ]
         if seed is not None:
             cmd.extend(["--seed", str(int(seed))])
-        result = subprocess.check_output(
-            cmd,
-            stderr=subprocess.STDOUT,
-            timeout=dock_timeout,
-            universal_newlines=True,
-        )
+        ok = _run_cmd(cmd, dock_timeout)
 
-        check_result = False
-        affinity_list: List[float] = []
-        for line in result.splitlines():
-            if line.startswith("-----+"):
-                check_result = True
-                continue
-            if not check_result:
-                continue
-            if line.startswith("Writing output") or line.startswith("Refine time"):
-                break
-            parts = line.strip().split()
-            if not parts or not parts[0].isdigit():
-                break
-            affinity_list.append(float(parts[1]))
-        return idx, min(affinity_list) if affinity_list else None
-    except Exception:
-        return idx, None
-    finally:
-        if not keep_temp:
-            for p in (mol_file, pdbqt_file, out_pdbqt):
-                try:
-                    if os.path.exists(p):
-                        os.remove(p)
-                except Exception:
-                    pass
+    score: Optional[float] = None
+    if ok and os.path.exists(out_pdbqt):
+        score_str = extract_vina_score_from_pdbqt(out_pdbqt)
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", str(score_str)):
+            score = float(score_str)
+
+    if not keep_temp:
+        for p in (mol_file, pdbqt_file, out_pdbqt):
+            if os.path.exists(p):
+                os.remove(p)
+
+    return idx, score
 
 def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
     """ 单个分子的对接函数，静默忽略失败分子。"""    
@@ -172,10 +146,8 @@ def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
     # 关键性能修复：显式控制 docking 程序使用的 CPU 核心数，避免与外层并行发生严重超卖（oversubscription）。
     cpu_per_dock = vars.get("_resolved_cpu_per_dock") or vars.get("docking_cpu_per_dock")
     if cpu_per_dock is not None:
-        try:
-            cpu_per_dock = int(cpu_per_dock)
-        except Exception:
-            cpu_per_dock = None
+        cpu_str = str(cpu_per_dock).strip()
+        cpu_per_dock = int(cpu_str) if re.fullmatch(r"\d+", cpu_str) else None
     if cpu_per_dock is not None and cpu_per_dock > 0:
         cmd.extend(["--cpu", str(cpu_per_dock)])
 
@@ -193,62 +165,44 @@ def vina_dock_single(ligand_file, receptor_pdbqt, results_dir, vars):
         cmd.extend(["--seed", str(seed_value)])
 
     timeout_seconds = vars.get("docking_timeout_seconds", 300)
-    try:
-        timeout_seconds = int(timeout_seconds)
-    except Exception:
-        timeout_seconds = 300
+    timeout_str = str(timeout_seconds).strip()
+    timeout_seconds = int(timeout_str) if re.fullmatch(r"\d+", timeout_str) else 300
 
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout_seconds)
-    score = extract_vina_score_from_pdbqt(out_file)
+    success = _run_cmd(cmd, timeout_seconds)
+    score = extract_vina_score_from_pdbqt(out_file) if success else "NA"
     if os.path.exists(log_file):
         os.remove(log_file)
-    return ligand_file, True, score
+    return ligand_file, success, score
 
 def extract_vina_score_from_pdbqt(pdbqt_file):
     """
     从输出中提取对接分数，兼容 Vina 与 QuickVina2 多种格式。
-    优先解析 out.pdbqt 中含有 REMARK 的结果行；若失败，回退解析 .log。
+    优先解析 out.pdbqt 中含有 REMARK 的结果行
     返回字符串形式分数（如 "-7.6"），失败返回 "NA"。
     """
-    import re
-    # 1) 尝试从 pdbqt 读取
-    try:
-        with open(pdbqt_file, "r", errors='ignore') as f:
-            for line in f:
-                u = line.upper()
-                if "REMARK" in u and ("RESULT" in u or "VINA" in u or "QVINA" in u):
-                    # 抓取行中的所有浮点数
-                    nums = re.findall(r"[-+]?\d*\.\d+|[-+]?\d+", line)
-                    # 选择第一个带负号或第一个数字作为能量值
-                    if nums:
-                        # 优先选择负值
-                        negs = [x for x in nums if x.startswith('-')]
-                        val = negs[0] if negs else nums[0]
-                        try:
-                            float(val)
-                            return val
-                        except Exception:
-                            pass
-    except Exception:
-        pass
-    # 2) 回退到 log 文件
+    if not pdbqt_file or not os.path.exists(pdbqt_file):
+        return "NA"
+    for line in open(pdbqt_file, "r", errors="ignore"):
+        u = line.upper()
+        if "REMARK" not in u or ("RESULT" not in u and "VINA" not in u and "QVINA" not in u):
+            continue
+        nums = re.findall(r"[-+]?\d*\.\d+|[-+]?\d+", line)
+        if not nums:
+            continue
+        negs = [x for x in nums if x.startswith("-")]
+        val = negs[0] if negs else nums[0]
+        if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", val):
+            return val
+    
     log_file = pdbqt_file.replace("_out.pdbqt", ".log")
     if os.path.exists(log_file):
-        try:
-            with open(log_file, 'r', errors='ignore') as f:
-                content = f.read()
-            # 常见模式：Vina / QVina2 的表格输出（第 1 行即最优构象）
-            #   1         -8.3      0.000      0.000
-            m = re.search(r"^\s*1\s+(-?\d+(?:\.\d+)?)\s+", content, flags=re.MULTILINE)
-            if m:
-                return m.group(1)
-
-            # 兜底：抓取第一个“带小数点”的负数，避免误匹配引用信息中的“455-461”→“-461”
-            neg_floats = re.findall(r"-\d+\.\d+", content)
-            if neg_floats:
-                return neg_floats[0]
-        except Exception:
-            pass
+        content = open(log_file, "r", errors="ignore").read()
+        m = re.search(r"^\s*1\s+(-?\d+(?:\.\d+)?)\s+", content, flags=re.MULTILINE)
+        if m:
+            return m.group(1)
+        neg_floats = re.findall(r"-\d+\.\d+", content)
+        if neg_floats:
+            return neg_floats[0]
     return "NA"
 
 def keep_best_docking_results(results_dir):
@@ -274,11 +228,8 @@ def keep_best_docking_results(results_dir):
         # 2a. 在组内找到最佳文件
         for file_path in file_group:
             score_str = extract_vina_score_from_pdbqt(file_path)
-            if score_str != "NA":
-                try:
-                    score = float(score_str)
-                except ValueError:
-                    continue
+            if score_str != "NA" and re.fullmatch(r"-?\d+(?:\.\d+)?", str(score_str)):
+                score = float(score_str)
                 if score < best_score:
                     best_score = score
                     best_file = file_path
@@ -286,16 +237,11 @@ def keep_best_docking_results(results_dir):
         # 2b. 删除组内非最佳的所有结果文件
         for file_path in file_group:
             if file_path != best_file:
-                try:
-                    # 删除 PDBQT 输出文件
+                if os.path.exists(file_path):
                     os.remove(file_path)
-                    
-                    # 删除对应的 log 文件
-                    log_file = file_path.replace("_out.pdbqt", ".log")
-                    if os.path.exists(log_file):
-                        os.remove(log_file)
-                except OSError as e:
-                    print(f"删除文件失败: {file_path}, 错误: {e}")
+                log_file = file_path.replace("_out.pdbqt", ".log")
+                if os.path.exists(log_file):
+                    os.remove(log_file)
 
 def output_smiles_scores(smiles_file, scores_dict, output_file):
     """将成功对接的结果写入文件,按对接分数排序（分数越低越好排在前面）,不包含头,不记录NA值。"""
@@ -311,16 +257,14 @@ def output_smiles_scores(smiles_file, scores_dict, output_file):
     # 收集有效的分子和分数
     valid_molecules = []
     for mol_name, smiles in smiles_map.items():
-        score = scores_dict.get(mol_name, "NA")
-        # 仅收集得分有效的分子
+        score = scores_dict.get(mol_name, "NA")        
         if score != "NA":
             norm_smiles = _normalize_smiles_remove_explicit_h(smiles)
             valid_molecules.append((norm_smiles, float(score)))
     
     # 按对接分数排序（分数越低越好，升序排列）
-    valid_molecules.sort(key=lambda x: x[1])
-    
-    # 写入排序后的结果
+    valid_molecules.sort(key=lambda x: x[1])    
+   
     with open(output_file, "w") as out:
         for smiles, score in valid_molecules:
             out.write(f"{smiles}\t{score}\n")
@@ -330,34 +274,20 @@ def output_smiles_scores(smiles_file, scores_dict, output_file):
 class DockingWorkflow:
     """分子对接工作流程类"""    
     def __init__(self, config: Dict, generation_dir: str, ligands_file: str):
-        """
-        初始化工作流程        
-        参数:
-        :param dict config: 完整的配置参数字典
-        :param str generation_dir: 当前代数专用的输出目录
-        :param str ligands_file: 输入的SMILES文件路径
-        """
-        self.generation_dir = Path(generation_dir)
+       
+        self.generation_dir = Path(generation_dir)        
+        self._initialize_vars_from_config(config)        
+        self.vars['ligands'] = ligands_file  
         
-        # 首先从配置中初始化self.vars
-        self._initialize_vars_from_config(config)
+        self._setup_generation_dirs()    
+      
+        self._setup_receptor_config(config)       
         
-        # 设置输入的配体文件
-        self.vars['ligands'] = ligands_file
-        
-        # 使用代际目录覆盖配置文件中的输出路径
-        self._setup_generation_dirs()
-        
-        # 然后设置受体配置
-        self._setup_receptor_config(config)        
-        
-        # 初始化运行时对象
         num_processors = self.vars.get('number_of_processors', None)
         self.vars['parallelizer'] = Parallelizer('multiprocessing', num_processors, True)
         
     def _initialize_vars_from_config(self, config: Dict):
-        """从配置文件初始化vars字典"""
-        # 获取对接配置部分
+        """从配置文件初始化vars字典"""        
         docking_config = config.get('docking', {})
         performance_config = config.get('performance', {})
 
@@ -605,76 +535,67 @@ class DockingWorkflow:
         temp_dir = tempfile.mkdtemp(prefix="obabel_", dir=tmp_root)
         keep_temp = bool(self.vars.get("obabel_keep_temp", False))
 
-        try:
-            scores: Dict[str, float] = {}
-            fail_score = float(self.vars.get("obabel_fail_score", 99.9))
-            filter_above = float(self.vars.get("obabel_filter_score_above", 50.0))
-            obabel_path = self.vars["obabel_path"]
-            vina_executable = self.vars["docking_executable"]
-            exhaustiveness = int(self.vars.get("docking_exhaustiveness", 1))
-            num_modes = int(self.vars.get("docking_num_modes", 10))
-            gen3d_timeout = int(self.vars.get("obabel_gen3d_timeout_seconds", 30))
-            convert_timeout = int(self.vars.get("obabel_convert_timeout_seconds", 30))
-            dock_timeout = int(self.vars.get("docking_timeout_seconds", 100))
-            seed = self.vars.get("seed")
+        scores: Dict[str, float] = {}
+        fail_score = float(self.vars.get("obabel_fail_score", 99.9))
+        filter_above = float(self.vars.get("obabel_filter_score_above", 50.0))
+        obabel_path = self.vars["obabel_path"]
+        vina_executable = self.vars["docking_executable"]
+        exhaustiveness = int(self.vars.get("docking_exhaustiveness", 1))
+        num_modes = int(self.vars.get("docking_num_modes", 10))
+        gen3d_timeout = int(self.vars.get("obabel_gen3d_timeout_seconds", 30))
+        convert_timeout = int(self.vars.get("obabel_convert_timeout_seconds", 30))
+        dock_timeout = int(self.vars.get("docking_timeout_seconds", 100))
+        seed = self.vars.get("seed")
 
-            with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                futures = []
-                for idx, smi in enumerate(smiles_list):
-                    futures.append(
-                        executor.submit(
-                            _obabel_fast_vina_dock_single,
-                            idx,
-                            smi,
-                            receptor_pdbqt,
-                            vina_executable,
-                            obabel_path,
-                            float(self.vars["center_x"]),
-                            float(self.vars["center_y"]),
-                            float(self.vars["center_z"]),
-                            float(self.vars["size_x"]),
-                            float(self.vars["size_y"]),
-                            float(self.vars["size_z"]),
-                            int(cpu_per_dock),
-                            exhaustiveness,
-                            num_modes,
-                            seed,
-                            gen3d_timeout,
-                            convert_timeout,
-                            dock_timeout,
-                            temp_dir,
-                            keep_temp,
-                        )
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            for idx, smi in enumerate(smiles_list):
+                futures.append(
+                    executor.submit(
+                        _obabel_fast_vina_dock_single,
+                        idx,
+                        smi,
+                        receptor_pdbqt,
+                        vina_executable,
+                        obabel_path,
+                        float(self.vars["center_x"]),
+                        float(self.vars["center_y"]),
+                        float(self.vars["center_z"]),
+                        float(self.vars["size_x"]),
+                        float(self.vars["size_y"]),
+                        float(self.vars["size_z"]),
+                        int(cpu_per_dock),
+                        exhaustiveness,
+                        num_modes,
+                        seed,
+                        gen3d_timeout,
+                        convert_timeout,
+                        dock_timeout,
+                        temp_dir,
+                        keep_temp,
                     )
+                )
 
-                for fut in tqdm(as_completed(futures), total=len(futures), desc="对接进度"):
-                    try:
-                        idx, score_float = fut.result()
-                    except Exception:
-                        continue
-                    if score_float is None:
-                        continue
-                    if score_float >= fail_score or score_float > filter_above:
-                        continue
-                    smi = smiles_list[idx]
-                    smi = _normalize_smiles_remove_explicit_h(smi)
-                    best = scores.get(smi)
-                    if best is None or score_float < best:
-                        scores[smi] = score_float
+            for fut in tqdm(as_completed(futures), total=len(futures), desc="对接进度"):
+                idx, score_float = fut.result()
+                if score_float is None or score_float >= fail_score or score_float > filter_above:
+                    continue
+                smi = _normalize_smiles_remove_explicit_h(smiles_list[idx])
+                best = scores.get(smi)
+                if best is None or score_float < best:
+                    scores[smi] = score_float
 
-            final_scores_file = os.path.join(results_dir, "final_scored.smi")
-            sorted_items = sorted(scores.items(), key=lambda x: x[1])
-            with open(final_scores_file, "w", encoding="utf-8") as out:
-                for smi, sc in sorted_items:
-                    out.write(f"{smi}\t{sc}\n")
-            print(f"已将 {len(sorted_items)} 个有效分子按对接分数排序写入 {final_scores_file}")
-            return final_scores_file
-        finally:
-            if not keep_temp:
-                try:
-                    shutil.rmtree(temp_dir)
-                except Exception:
-                    pass
+        final_scores_file = os.path.join(results_dir, "final_scored.smi")
+        sorted_items = sorted(scores.items(), key=lambda x: x[1])
+        with open(final_scores_file, "w", encoding="utf-8") as out:
+            for smi, sc in sorted_items:
+                out.write(f"{smi}\t{sc}\n")
+        print(f"已将 {len(sorted_items)} 个有效分子按对接分数排序写入 {final_scores_file}")
+
+        if not keep_temp:
+            shutil.rmtree(temp_dir)
+
+        return final_scores_file
 
     def run_docking(self, receptor_pdbqt: str, ligand_dir: str) -> str:
         print("执行分子对接...")
@@ -702,24 +623,18 @@ class DockingWorkflow:
             
             for future in tqdm(as_completed(future_to_ligand), total=len(future_to_ligand), desc="对接进度"):
                 ligand_file = future_to_ligand[future]
-                try:
-                    _, success, score_str = future.result()
-                except Exception as exc:
-                    logger.error(f"配体 {ligand_file} 对接失败: {exc}")
-                    success = False
-                    score_str = "NA"
+                _, success, score_str = future.result()
                 
                 base_name = os.path.basename(ligand_file).replace(".pdbqt", "")
                 mol_name = base_name.split('__')[0]
                 if success and score_str != "NA":
-                    try:
+                    if re.fullmatch(r"-?\d+(?:\.\d+)?", str(score_str)):
                         score_float = float(score_str)
                         current_best_score = scores.get(mol_name)
                         if current_best_score is None or score_float < float(current_best_score):
                             scores[mol_name] = score_str
-                    except (ValueError, TypeError):
-                        if mol_name not in scores:
-                            scores[mol_name] = "NA"
+                    elif mol_name not in scores:
+                        scores[mol_name] = "NA"
                 else:
                     if mol_name not in scores:
                         scores[mol_name] = "NA"
@@ -781,11 +696,9 @@ def run_molecular_docking(config: Dict, ligands_file: str, generation_dir: str, 
     if seed_value is None:
         seed_value = config.get("workflow", {}).get("seed", 42)
         docking_config["seed"] = seed_value
-    try:
-        seed_value = int(seed_value)
-    except (TypeError, ValueError):
-        seed_value = 42
-        docking_config["seed"] = seed_value
+    seed_str = str(seed_value).strip()
+    seed_value = int(seed_str) if re.fullmatch(r"-?\d+", seed_str) else 42
+    docking_config["seed"] = seed_value
     random.seed(seed_value)
     
     # 实例化工作流，并传入配体文件路径
@@ -828,14 +741,11 @@ def main():
 
     args = parser.parse_args()
     
-    try:
-        with open(args.config_file, 'r') as f:
-            config = json.load(f)
-    except Exception as e:
-        logging.error(f"无法加载配置文件 {args.config_file}: {e}")
-        exit(1)
-        
-    # 关键修复：如果通过命令行传递了处理器数量，则覆盖配置文件中的值
+    if not os.path.exists(args.config_file):
+        raise FileNotFoundError(f"无法加载配置文件 {args.config_file}")
+    with open(args.config_file, "r") as f:
+        config = json.load(f)       
+    
     if args.number_of_processors is not None:
         if 'performance' not in config:
             config['performance'] = {}
@@ -845,11 +755,8 @@ def main():
         if 'docking' not in config:
             config['docking'] = {}
         config['docking']['seed'] = args.seed
-        logger.info(f"通过命令行参数覆盖对接随机种子为: {args.seed}")
-
-    # 将smiles_file参数和receptor参数传递给对接工作流
-    final_output_file = run_molecular_docking(config, args.smiles_file, args.generation_dir, args.receptor)
-    
+        logger.info(f"通过命令行参数覆盖对接随机种子为: {args.seed}")    
+    final_output_file = run_molecular_docking(config, args.smiles_file, args.generation_dir, args.receptor)    
     if final_output_file:
         print(f"对接工作流成功完成: {final_output_file}")
         # 将生成的最终结果文件复制到指定的output_file
@@ -857,8 +764,7 @@ def main():
         logging.info(f"结果已成功复制到: {args.output_file}")
         exit(0)
     else:
-        logging.error("对接流程失败，未生成有效的输出文件。")
-        # 创建一个空的输出文件，以防止下游流程因FileNotFound而崩溃
+        logging.error("对接流程失败，未生成有效的输出文件。")        
         Path(args.output_file).touch()
         exit(1)
 
