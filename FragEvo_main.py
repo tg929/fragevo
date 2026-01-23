@@ -9,7 +9,9 @@ import logging
 import multiprocessing
 import os
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import timedelta
 from typing import List, Optional, Tuple
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -21,6 +23,12 @@ from utils.cpu_utils import calculate_optimal_workers, get_available_cpu_cores
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("FRAGEVO_MAIN")
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 0:
+        seconds = 0
+    return str(timedelta(seconds=int(round(seconds))))
 
 def run_workflow_for_receptor(
     config_path: str,
@@ -244,5 +252,9 @@ if __name__ == "__main__":
     # On Windows or macOS, using 'spawn' (or 'forkserver') avoids issues with forking.
     if sys.platform.startswith('win') or sys.platform.startswith('darwin'):
         multiprocessing.set_start_method('spawn', force=True)
-    
-    main()
+
+    _t0 = time.perf_counter()
+    try:
+        main()
+    finally:
+        logger.info("Total elapsed time: %s", _format_elapsed(time.perf_counter() - _t0))

@@ -12,6 +12,7 @@ import multiprocessing
 import signal
 import psutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 import time
@@ -28,6 +29,12 @@ active_processes: Dict[int, Dict] = {}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("FRAGEVO_MAIN")
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 0:
+        seconds = 0
+    return str(timedelta(seconds=int(round(seconds))))
 
 def _is_receptor_completed(output_root: Path, receptor_name: str, max_generations: int) -> bool:
     """
@@ -457,5 +464,9 @@ if __name__ == "__main__":
     # 为防止在多线程+多进程混合编程中出现死锁（如此次遇到的情况），
     # 我们统一将启动方法强制设置为'spawn'，以保证在所有平台上的稳定运行。
     multiprocessing.set_start_method('spawn', force=True)
-    
-    main()
+
+    _t0 = time.perf_counter()
+    try:
+        main()
+    finally:
+        logger.info("Total elapsed time: %s", _format_elapsed(time.perf_counter() - _t0))
