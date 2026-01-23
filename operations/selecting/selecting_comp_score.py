@@ -24,6 +24,7 @@ selection.comp_score_settings.novelty_filter.
 import argparse
 import os
 import json
+import re
 import sys
 from typing import List, Dict, Tuple, Optional
 
@@ -35,69 +36,47 @@ from rdkit.Chem import rdMolDescriptors
 # SA scorer (same as other modules in this repo)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Try operations/scoring first
-SCORING_DIR = os.path.join(PROJECT_ROOT, 'operations', 'scoring')
-if SCORING_DIR not in sys.path:
-    sys.path.insert(0, SCORING_DIR)
-calc_sa = None
-try:
-    from sascorer import calculateScore as calc_sa  # type: ignore
-except Exception:
-    # Fallback: use fragmlm/utils/sascorer.py (ships with fpscores.pkl.gz)
-    ALT_SCORING_DIR = os.path.join(PROJECT_ROOT, 'fragmlm', 'utils')
-    if ALT_SCORING_DIR not in sys.path:
-        sys.path.insert(0, ALT_SCORING_DIR)
-    try:
-        from sascorer import calculateScore as calc_sa  # type: ignore
-    except Exception:
-        calc_sa = None
+_FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
+
+ALT_SCORING_DIR = os.path.join(PROJECT_ROOT, 'fragmlm', 'utils')
+if ALT_SCORING_DIR not in sys.path:
+    sys.path.insert(0, ALT_SCORING_DIR)
+from sascorer import calculateScore as calc_sa  # type: ignore
 
 
 def read_config(config_file: Optional[str]) -> dict:
     if not config_file:
         return {}
-    try:
-        with open(config_file, 'r', encoding='utf-8') as f:
-            cfg = json.load(f)
-        return cfg
-    except Exception:
+    if not os.path.exists(config_file):
         return {}
+    with open(config_file, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
 
 def load_molecules_with_scores(path: str) -> List[Dict]:
     molecules = []
-    if not path:
+    if not path or not os.path.exists(path):
         return molecules
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            for ln, line in enumerate(f, 1):
-                s = line.strip()
-                if not s:
-                    continue
-                parts = s.replace('\t', ' ').split()
-                if len(parts) < 2:
-                    continue
-                smi = parts[0]
-                try:
-                    ds = float(parts[1])
-                except ValueError:
-                    continue
-                molecules.append({'smiles': smi, 'docking_score': ds})
-    except FileNotFoundError:
-        pass
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            s = line.strip()
+            if not s:
+                continue
+            parts = s.replace('\t', ' ').split()
+            if len(parts) < 2:
+                continue
+            ds_str = parts[1]
+            if not _FLOAT_RE.fullmatch(ds_str):
+                continue
+            molecules.append({'smiles': parts[0], 'docking_score': float(ds_str)})
     return molecules
 
 
 def compute_qed_sa(smiles: str) -> Tuple[Optional[float], Optional[float]]:
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None, None
-        qed = float(QED.qed(mol))
-        sa = float(calc_sa(mol)) if calc_sa else None
-        return qed, sa
-    except Exception:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
         return None, None
+    return float(QED.qed(mol)), float(calc_sa(mol))
 
 
 def normalize_ds(ds: float, clip_min: float = -20.0, clip_max: float = 0.0) -> float:
@@ -114,17 +93,10 @@ def normalize_sa(sa: float, sa_max_value: float = 10.0, sa_denominator: float = 
 
 
 def build_fp(smiles: str, fp_type: str = 'morgan', radius: int = 2, nbits: int = 2048):
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return None
-        if fp_type == 'morgan':
-            fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
-        else:
-            fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
-        return fp
-    except Exception:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
         return None
+    return rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=nbits)
 
 
 def tanimoto_max_similarity(query_smi: str, reference_smis: List[str], fp_type: str = 'morgan', radius: int = 2, nbits: int = 2048) -> float:
@@ -159,14 +131,11 @@ def apply_optional_filters(cands: List[Dict], cfg: dict) -> List[Dict]:
 
     references = []
     if ref_file and os.path.exists(ref_file):
-        try:
-            with open(ref_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    s = line.strip().split()[0]
-                    if s:
-                        references.append(s)
-        except Exception:
-            references = []
+        with open(ref_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                s = line.strip().split()[0]
+                if s:
+                    references.append(s)
 
     filtered = []
     for m in cands:
@@ -180,11 +149,8 @@ def apply_optional_filters(cands: List[Dict], cfg: dict) -> List[Dict]:
         if sa > sa_max:
             continue
         if ds_active_median is not None:
-            try:
-                if ds >= float(ds_active_median):
-                    continue
-            except Exception:
-                pass
+            if ds >= float(ds_active_median):
+                continue
         if references:
             max_sim = tanimoto_max_similarity(m['smiles'], references, fp_type, fp_radius, fp_nbits)
             if max_sim >= sim_th:
@@ -266,29 +232,27 @@ def main():
     remaining.sort(key=lambda d: d['comp_score'], reverse=True)
     selected = elites + (remaining[:max(0, n_select - len(elites))] if n_select > 0 else remaining)
 
-    os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
+    out_dir = os.path.dirname(args.output_file)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(args.output_file, 'w', encoding='utf-8') as f:
         for m in selected:
             f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\t{m['qed_score']:.6f}\t{m['sa_score']:.6f}\t{m['comp_score']:.6f}\n")
 
     # Optional stats file next to output
     if settings.get('write_stats', True):
-        try:
-            base_dir = os.path.dirname(args.output_file)
-            gen_folder = os.path.basename(base_dir)
-            stats_path = os.path.join(base_dir, f"{gen_folder}_comp_score_selection_stats.txt")
-            import numpy as np
-            ys = [m['comp_score'] for m in enriched]
-            ds_list = [m['docking_score'] for m in enriched]
-            with open(stats_path, 'w', encoding='utf-8') as sf:
-                sf.write("Comp Score Selection Stats\n")
-                if ys:
-                    sf.write(f"count={len(ys)}\n")
-                    sf.write(f"y mean={np.mean(ys):.6f}, y max={np.max(ys):.6f}, y min={np.min(ys):.6f}\n")
-                if ds_list:
-                    sf.write(f"DS mean={np.mean(ds_list):.6f}, DS best(min)={np.min(ds_list):.6f}\n")
-        except Exception:
-            pass
+        base_dir = os.path.dirname(args.output_file)
+        gen_folder = os.path.basename(base_dir)
+        stats_path = os.path.join(base_dir, f"{gen_folder}_comp_score_selection_stats.txt")
+        ys = [m['comp_score'] for m in enriched]
+        ds_list = [m['docking_score'] for m in enriched]
+        with open(stats_path, 'w', encoding='utf-8') as sf:
+            sf.write("Comp Score Selection Stats\n")
+            if ys:
+                sf.write(f"count={len(ys)}\n")
+                sf.write(f"y mean={np.mean(ys):.6f}, y max={np.max(ys):.6f}, y min={np.min(ys):.6f}\n")
+            if ds_list:
+                sf.write(f"DS mean={np.mean(ds_list):.6f}, DS best(min)={np.min(ds_list):.6f}\n")
 
     return 0
 
