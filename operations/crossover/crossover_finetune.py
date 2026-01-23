@@ -47,19 +47,13 @@ def _normalize_unique_smiles(smiles_list):
     return normalized, seen
 def main():
     parser = argparse.ArgumentParser(description='crossover')
-    parser.add_argument("--smiles_file", "-s", type=str, required=True,
-                      help="--smiles_file")
-    parser.add_argument("--output_file", "-o", type=str, 
-                      default=os.path.join(PROJECT_ROOT, "output/generation_crossover_0.smi"),
-                      help="--output_file")
-    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', 
-                      help='--config_file')
-    parser.add_argument('--lineage_file', type=str, default=None,
-                      help='--lineage_file')
-    parser.add_argument('--seed', type=int, default=None,
-                      help='--seed')
+    parser.add_argument("--smiles_file", "-s", type=str, required=True,help="--smiles_file")
+    parser.add_argument("--output_file", "-o", type=str, default=os.path.join(PROJECT_ROOT, "output/generation_crossover_0.smi"),help="--output_file")
+    parser.add_argument('--config_file', type=str, default='fragevo/config_example.json', help='--config_file')
+    parser.add_argument('--lineage_file', type=str, default=None,help='--lineage_file')
+    parser.add_argument('--seed', type=int, default=None,help='--seed')
     args = parser.parse_args()    
-    # 加载配置
+    
     with open(args.config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
     seed_value = args.seed if args.seed is not None else config.get("workflow", {}).get("seed", 42)
