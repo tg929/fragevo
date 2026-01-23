@@ -6,21 +6,11 @@ import json
 import argparse
 import random
 import logging
+import re
 from pathlib import Path
 from typing import Dict, List, Tuple
-from contextlib import contextmanager
 from tqdm import tqdm
 from rdkit import Chem
-@contextmanager
-def suppress_stdout_stderr():
-    """A context manager that redirects stdout and stderr to devnull"""
-    with open(os.devnull, 'w') as fnull:
-        old_stdout, old_stderr = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = fnull, fnull
-        try:
-            yield
-        finally:
-            sys.stdout, sys.stderr = old_stdout, old_stderr
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -31,14 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
-    try:
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return smiles
-        mol = Chem.RemoveHs(mol)
-        return Chem.MolToSmiles(mol, isomericSmiles=True)
-    except Exception:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
         return smiles
+    mol = Chem.RemoveHs(mol)
+    return Chem.MolToSmiles(mol, isomericSmiles=True)
 
 
 def _normalize_unique_smiles(smiles_list):
@@ -53,22 +40,19 @@ def _normalize_unique_smiles(smiles_list):
         seen.add(ns)
         normalized.append(ns)
     return normalized, seen
-class MutationExecutor:
-    """执行分子变异操作的类"""
+class MutationExecutor:    
     def __init__(self, config: Dict):
         self.config = config
         self.logger = logger
         self.mutation_config = self.config.get('mutation_finetune', {})
         workflow_config = self.config.get("workflow", {})
-        self.enable_lineage_tracking = bool(workflow_config.get("enable_lineage_tracking", False))
+        self.enable_lineage_tracking = bool(workflow_config.get("enable_lineage_tracking", False))        
         
-        # 从mutation_finetune配置块中直接读取路径
         rxn_library = self.mutation_config.get('rxn_library', 'all_rxns')
         rxn_library_file = self.mutation_config.get('rxn_library_file', '')
         function_group_library = self.mutation_config.get('function_group_library', '')
         complementary_mol_directory = self.mutation_config.get('complementary_mol_directory', '')       
         
-        # 解析为绝对路径
         rxn_library_vars = [
             rxn_library,
             str(PROJECT_ROOT / rxn_library_file) if rxn_library_file else '',
@@ -83,8 +67,7 @@ class MutationExecutor:
         self.lineage_records: List[Dict] = []
     def run_mutation_generation(self, parent_smiles: List[str], additional_smiles: List[str] = None) -> List[str]:
         if additional_smiles is None:
-            additional_smiles = []            
-        # 从配置文件读取参数
+            additional_smiles = []                  
         num_mutations = self.mutation_config.get(
             "number_of_mutants",
             self.mutation_config.get("mutation_attempts", 40),  # backward-compat
@@ -106,14 +89,13 @@ class MutationExecutor:
         max_consecutive_failures = len(total_population) * max_consecutive_failures_multiplier
         self.logger.info(f"开始变异操作: 目标生成 {num_mutations} 个新分子，种群大小 {len(total_population)}")        
         progress_bar = None
-        if enable_progress_bar:
-            progress_bar = tqdm(
-                total=num_mutations, 
-                desc="Generating mutations",
-                unit="molecules",
-                leave=True
-            )
-        try:
+        with tqdm(
+            total=num_mutations,
+            desc="Generating mutations",
+            unit="molecules",
+            leave=True,
+            disable=not enable_progress_bar,
+        ) as progress_bar:
             while len(mutation_results) < num_mutations and attempts < max_attempts:
                 attempts += 1                
                 if consecutive_failures >= max_consecutive_failures:
@@ -127,57 +109,42 @@ class MutationExecutor:
                     self.logger.warning("所有分子都尝试过且失败，无法继续生成新的变异分子")
                     break
                 parent = react_list.pop()
-                try:
-                    # 使用suppress_stdout_stderr来避免输出干扰
-                    with suppress_stdout_stderr():
-                        new_smiles_list = self.mutator.run_smiles_click2(parent)
-                    if not new_smiles_list:
-                        failed_molecules.add(parent)
-                        consecutive_failures += 1
-                        continue
-
-                    consecutive_failures = 0
-                    
-                    for new_smi in new_smiles_list:
-                        if not new_smi:
-                            continue
-                        is_valid = all(check(new_smi) for check in self.filter_object_dict.values())
-                        if (new_smi and is_valid and
-                            new_smi not in mutation_results and 
-                            new_smi not in total_population):
-                            
-                            mutation_results.append(new_smi)
-                            if self.enable_lineage_tracking:
-                                self.lineage_records.append({
-                                    "child": new_smi,
-                                    "operation": "mutation",
-                                    "parents": [parent]
-                                })
-                            self.logger.debug(f"成功生成新分子: {new_smi}")                            
-                            # 更新进度条
-                            if progress_bar:
-                                progress_bar.update(1)
-                                progress_bar.set_postfix({
-                                    'success_rate': f"{len(mutation_results)}/{attempts}",
-                                    'failed_mols': len(failed_molecules)
-                                })
-                            
-                            if len(mutation_results) >= num_mutations:
-                                break
-                                
-                    if len(mutation_results) >= num_mutations:
-                        break
-                        
-                except Exception as e:
-                    self.logger.debug(f"分子 {parent} 变异失败: {str(e)}")
+                new_smiles_list = self.mutator.run_smiles_click2(parent)
+                if not new_smiles_list:
                     failed_molecules.add(parent)
                     consecutive_failures += 1
                     continue
-        
-        finally:
-            # 确保进度条被正确关闭
-            if progress_bar:
-                progress_bar.close()        
+
+                consecutive_failures = 0
+
+                for new_smi in new_smiles_list:
+                    if not new_smi:
+                        continue
+                    is_valid = all(check(new_smi) for check in self.filter_object_dict.values())
+                    if (new_smi and is_valid and
+                        new_smi not in mutation_results and
+                        new_smi not in total_population):
+
+                        mutation_results.append(new_smi)
+                        if self.enable_lineage_tracking:
+                            self.lineage_records.append({
+                                "child": new_smi,
+                                "operation": "mutation",
+                                "parents": [parent]
+                            })
+                        self.logger.debug(f"成功生成新分子: {new_smi}")
+                        progress_bar.update(1)
+                        progress_bar.set_postfix({
+                            'success_rate': f"{len(mutation_results)}/{attempts}",
+                            'failed_mols': len(failed_molecules)
+                        })
+
+                        if len(mutation_results) >= num_mutations:
+                            break
+
+                if len(mutation_results) >= num_mutations:
+                    break
+
         unique_results = sorted(set(mutation_results))
         parent_set_noh = {_normalize_smiles_remove_explicit_h(s) for s in total_population if s}
         unique_results_noh, _ = _normalize_unique_smiles(unique_results)
@@ -238,10 +205,8 @@ def main():
     with open(args.config_file, 'r', encoding='utf-8') as f:
         config = json.load(f)
     seed_value = args.seed if args.seed is not None else config.get("workflow", {}).get("seed", 42)
-    try:
-        seed_value = int(seed_value)
-    except (TypeError, ValueError):
-        seed_value = 42
+    seed_str = str(seed_value).strip()
+    seed_value = int(seed_str) if re.fullmatch(r"-?\d+", seed_str) else 42
     random.seed(seed_value)
     enable_lineage_tracking = bool(config.get("workflow", {}).get("enable_lineage_tracking", False))
     
