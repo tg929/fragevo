@@ -1,6 +1,6 @@
-# 指标计算（对比/分析）
 import argparse
 import os
+import re
 import numpy as np
 import sys
 from rdkit import Chem
@@ -13,11 +13,11 @@ from tdc import Oracle, Evaluator
 qed_evaluator = Oracle('qed')
 sa_evaluator = Oracle('sa')
 diversity_evaluator = Evaluator(name='Diversity')
-# 注意: TDC的Novelty评估器需要一个初始SMILES列表进行初始化
-# 我们将在主函数中根据参数动态创建它
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
+
+_FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 
 def calculate_sa_scores(smiles_list: list) -> list:
     """使用TDC Oracle批量计算SA分数。"""
@@ -51,12 +51,13 @@ def load_smiles_and_scores_from_file(filepath):   #加载smile和score：对接�
             parts = line.strip().split()
             if len(parts) >= 2:
                 smiles = parts[0]
-                try:
-                    score = float(parts[1])
+                score_str = parts[1]
+                if _FLOAT_RE.fullmatch(score_str):
+                    score = float(score_str)
                     molecules.append(smiles)
                     scores.append(score)
                     smiles_list.append(smiles)
-                except ValueError:
+                else:
                     print(f"Warning: Could not parse score for SMILES: {smiles}")
             elif len(parts) == 1: # If only SMILES is present, no score
                 smiles_list.append(parts[0])    
@@ -87,8 +88,7 @@ def calculate_docking_stats(scores):
 def calculate_novelty(current_smiles: list, initial_smiles_list: list) -> float:
     """使用TDC Evaluator计算新颖性。"""
     if not current_smiles:
-        return 0.0
-    # 正确用法: 直接按位置传入参数
+        return 0.0    
     novelty_evaluator = Evaluator(name='Novelty')
     return novelty_evaluator(current_smiles, initial_smiles_list)
 
@@ -116,16 +116,14 @@ def main():
     print(f"Processing population file: {args.current_population_docked_file}")
     print(f"Using initial population for novelty: {args.initial_population_file}")
     print(f"Saving results to: {args.output_file}")
-
-    # 加载当前SMILES和对接分数
+  
     current_smiles_list, scored_molecules_smiles, docking_scores = load_smiles_and_scores_from_file(args.current_population_docked_file)
-    
-    # 对接分数排序
+   
     if scored_molecules_smiles and docking_scores:
         molecules_with_scores = sorted(zip(scored_molecules_smiles, docking_scores), key=lambda x: x[1])
         sorted_smiles = [s for s, _ in molecules_with_scores]
     else:
-        sorted_smiles = current_smiles_list # 如果没有分数，则使用原始顺序
+        sorted_smiles = current_smiles_list 
         
     # 1. Docking Score Metrics
     top1_score, top10_mean_score, top100_mean_score = calculate_docking_stats(docking_scores)
@@ -148,17 +146,14 @@ def main():
     mean_qed = np.mean(qed_scores) if qed_scores else np.nan
     mean_sa = np.mean(sa_scores) if sa_scores else np.nan
 
-    # 安全地处理可能包含特殊字符的文件名
     population_filename = os.path.basename(args.current_population_docked_file)
-    initial_population_filename = os.path.basename(args.initial_population_file)    
-    # 为了避免f-string格式化问题，使用传统的字符串格式化
+    initial_population_filename = os.path.basename(args.initial_population_file) 
     results = "Metrics for Population: {}\n".format(population_filename)
     results += "--------------------------------------------------\n"
     results += "Total molecules processed: {}\n".format(len(current_smiles_list))
     results += "Valid RDKit molecules for properties: {}\n".format(len(sorted_smiles))
     results += "Molecules with docking scores: {}\n".format(len(docking_scores))
-    results += "--------------------------------------------------\n"    
-    # 处理浮点数格式化，注意处理NaN情况
+    results += "--------------------------------------------------\n"  
     if np.isnan(top1_score): #top1
         results += "Docking Score - Top 1: N/A\n"
     else:
@@ -189,11 +184,8 @@ def main():
     print_calculation_results(results)
     
     # Save results to output file
-    try:
-        with open(args.output_file, 'w') as f:
-            f.write(results)
-        print(f"Results successfully saved to {args.output_file}")
-    except IOError:
-        print(f"Error: Could not write results to {args.output_file}")
+    with open(args.output_file, 'w') as f:
+        f.write(results)
+    print(f"Results successfully saved to {args.output_file}")
 if __name__ == "__main__":
     main()
