@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-数据集包
-=======
+Datasets Package
+================
 
-包含用于分子数据处理的各种工具和脚本
+Contains various tools and scripts for molecular dataset processing.
 """
 
 __version__ = "1.0.0"

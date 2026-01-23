@@ -1,18 +1,18 @@
 {
-  "description": "FragEvo配置文件",
+  "description": "FragEvo configuration file",
   "paths": {
     "project_root": ".",
-    "description": "项目根目录路径"
+    "description": "Project root directory path"
   },
   "workflow": {
-    "description": "FragEvo混合工作流核心参数",
+    "description": "Core parameters for the FragEvo",
     "seed": 42,
     "max_generations": 25,
     "initial_population_file": "datasets/initial_population/initial_population.smi",
     "output_directory": "FragEvo_output"
   },
   "gpt": {
-    "description": "FragMLM generation settings. n_fragments_to_mask: int>=0; dynamic_masking.enable: true|false.",
+    "description": "FragMLM settings. n_fragments_to_mask: int>=0; dynamic_masking.enable: true|false.",
     "n_fragments_to_mask": 1,
     "seed": 42,
     "dynamic_masking": {
@@ -20,10 +20,10 @@
     }
   },
   "receptors": {
-    "description": "受体配置，支持多个对接目标",
+    "description": "Receptor configuration (supports multiple docking targets)",
     "default_receptor": {
       "name": "parp1",
-      "description": "The primary default PARP1 receptor for initial runs.",
+      "description": "default PARP1 receptor for initial runs.",
       "file": "tutorial/PARP/4r6eA_PARP1_prepared.pdb",
       "center_x": -70.76,
       "center_y": 21.82,
@@ -35,7 +35,7 @@
     "target_list": {
       "parp1": {
         "name": "parp1",
-        "description": "The primary default PARP1 receptor for initial runs.",
+        "description": "default PARP1 receptor for initial runs.",
         "file": "tutorial/PARP/4r6eA_PARP1_prepared.pdb",
         "center_x": -70.76,
         "center_y": 21.82,
@@ -157,7 +157,7 @@
     }
   },
   "docking": {
-    "description": "mole docking setting: pipeline: autogrow|obabel_fast; dock_choice: VinaDocking|QVinaDocking; conversion_choice: MGLToolsConversion|ObabelConversion; number_of_processors: null(performance.number_of_processors)|int>0; timeout_vs_gtimeout: timeout|gtimeout.",
+    "description": "docking setting: pipeline: autogrow|obabel_fast; dock_choice: VinaDocking|QVinaDocking; conversion_choice: MGLToolsConversion|ObabelConversion; number_of_processors: null(performance.number_of_processors)|int>0; timeout_vs_gtimeout: timeout|gtimeout.",
     "pipeline": "obabel_fast",
     "dock_choice": "VinaDocking",
     "conversion_choice": "MGLToolsConversion",
@@ -205,7 +205,7 @@
     "complementary_mol_directory": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/complementary_mol_dir"
   },
   "filter": {
-    "description": "filter seeting:enable_*: true|false; no_filters=true 将仅做基础结构检查; alternative_filters: null或自定义过滤器配置.",
+    "description": "Filter settings: enable_*: true|false; no_filters=true performs only basic structure checks; alternative_filters: null or a custom filter config.",
     "enable_lipinski_strict": false,
     "enable_lipinski_lenient": true,
     "enable_ghose": false,
@@ -222,13 +222,13 @@
     "description": "selection strategies: selection_mode: single_objective|multi_objective.",
     "selection_mode": "multi_objective",
     "single_objective_settings": {
-      "description": "Parameters for single-objective selection based on docking score. selector_choice: Rank_Selector|Roulette_Selector|Tournament_Selector; n_select: int>0; tourn_size: (0,1] (only for Tournament_Selector).",
+      "description": "single-objective selection based on docking score. selector_choice: Rank_Selector|Roulette_Selector|Tournament_Selector; n_select: int>0; tourn_size: (0,1] (only for Tournament_Selector).",
       "n_select": 100,
       "selector_choice": "Rank_Selector",
       "tourn_size": 0.1
     },
     "multi_objective_settings": {
-      "description": "Parameters for multi-objective molecular selection using NSGA-II. objectives[].name: docking_score|qed_score|sa_score; objectives[].direction: minimize|maximize; enhanced_strategy: standard|adaptive|enhanced; n_select: int>0; enable_crowding_distance: true|false.",
+      "description": "multi-objective molecular selection using NSGA-II. objectives[].name: docking_score|qed_score|sa_score; objectives[].direction: minimize|maximize; enhanced_strategy: standard|adaptive|enhanced; n_select: int>0; enable_crowding_distance: true|false.",
       "n_select": 100,
       "objectives": [
         {
@@ -250,7 +250,7 @@
     }
   },
   "performance": {
-    "description": "性能优化参数。parallel_processing: true|false; max_workers: -1(auto)|int>0; number_of_processors: -1(auto)|int>0; cleanup_intermediate_files: true|false.",
+    "description": "Performance tuning parameters. parallel_processing: true|false; max_workers: -1(auto)|int>0; number_of_processors: -1(auto)|int>0; cleanup_intermediate_files: true|false.",
     "parallel_processing": true,
     "max_workers": 1,
     "number_of_processors": -1,

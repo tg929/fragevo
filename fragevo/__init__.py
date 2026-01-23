@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-fragevo 包初始化文件
-=================
+fragevo Package Initialization
+=============================
 
-FragEvo 混合分子生成系统的核心包
+Core package for the FragEvo hybrid molecular generation system.
 """
 
 __version__ = "1.0.0"
