@@ -12,18 +12,19 @@ import argparse
 import os
 import sys
 import json
+import re
 from pathlib import Path
 import numpy as np
 import logging
 from typing import List, Dict, Optional
-# 配置日志
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-# 添加项目根目录到路径
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
-
 from utils.chem_metrics import ChemMetricCache
+
+_FLOAT_RE = re.compile(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
 
 def non_dominated_sort(objectives):
     """
@@ -86,14 +87,12 @@ def crowding_distance(objectives, front):
 def _load_multi_objective_config(config_file: str) -> Dict:
     if not config_file:
         return {}
-    try:
-        with open(config_file, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        selection_cfg = cfg.get("selection", {})
-        return selection_cfg.get("multi_objective_settings", {}) or {}
-    except Exception as exc:
-        logger.warning(f"无法加载多目标选择配置 {config_file}: {exc}")
+    if not os.path.exists(config_file):
         return {}
+    with open(config_file, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+    selection_cfg = cfg.get("selection", {})
+    return selection_cfg.get("multi_objective_settings", {}) or {}
 
 
 def _build_objective_matrix(molecules_data: List[Dict], objectives_cfg: List[Dict]) -> np.ndarray:
@@ -184,28 +183,23 @@ def load_molecules_with_scores(docked_file):
         list: 分子数据列表,每个元素包含SMILES和对接分数
     """
     molecules = []    
-    try:
-        with open(docked_file, 'r') as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if line:
-                    # 支持空格或制表符分隔
-                    parts = line.replace('\t', ' ').split()
-                    if len(parts) >= 2:
-                        smiles = parts[0]
-                        try:
-                            docking_score = float(parts[1])
-                            molecules.append({
-                                'smiles': smiles,
-                                'docking_score': docking_score
-                            })
-                        except ValueError:
-                            logger.warning(f"第{line_num}行: 无法解析分数 '{parts[1]}' for SMILES {smiles}")
-                    else:
-                        logger.warning(f"第{line_num}行: 格式不正确，跳过: {line}")
-    except FileNotFoundError:
+    if not os.path.exists(docked_file):
         logger.error(f"错误: 找不到文件 {docked_file}")
-        return []    
+        return []
+    with open(docked_file, 'r') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.replace('\t', ' ').split()
+            if len(parts) < 2:
+                logger.warning(f"第{line_num}行: 格式不正确，跳过: {line}")
+                continue
+            score_str = parts[1]
+            if not _FLOAT_RE.fullmatch(score_str):
+                logger.warning(f"第{line_num}行: 无法解析分数 '{parts[1]}' for SMILES {parts[0]}")
+                continue
+            molecules.append({'smiles': parts[0], 'docking_score': float(score_str)})
     return molecules
 
 def load_molecules_from_combined_files(parent_file: str, docked_file: str):
@@ -334,22 +328,21 @@ def print_selection_statistics(selected_molecules):
     print("="*40)
 def main():
     parser = argparse.ArgumentParser(description='NSGA-II-multi_objective_selection')    
-    # 输入输出参数
+
     parser.add_argument('--docked_file', type=str, required=True,
                        help='--docked_file')
     parser.add_argument('--parent_file', type=str, required=False,
                        help='--parent_file')
     parser.add_argument('--output_file', type=str, required=True,
                        help='--output_file')    
-    # 选择参数
+  
     parser.add_argument('--n_select', type=int, required=False,
                        help='--n_select')
-    # 输出格式选择
+
     parser.add_argument('--output_format', type=str, choices=['smiles_only', 'with_scores'], 
                        default='with_scores',
                        help='--output_format')
-    
-    # 其他参数
+
     parser.add_argument('--config_file', type=str, default=None,
                        help='--config_file')
     parser.add_argument('--cache_file', type=str, default=None,
@@ -378,8 +371,6 @@ def main():
 
     cache_path = args.cache_file
     if not cache_path:
-        # output_file is usually .../<run_root>/generation_k/initial_population_docked.smi
-        # cache is persisted at run_root level to be shared across generations.
         out_path = os.path.abspath(args.output_file)
         run_root = os.path.dirname(os.path.dirname(out_path))
         cache_path = os.path.join(run_root, "chem_metric_cache.json")
@@ -387,10 +378,9 @@ def main():
 
     # 1. 加载分子数据
     if args.parent_file:
-        # 如果提供了父代文件，合并父代和子代
+   
         molecules = load_molecules_from_combined_files(args.parent_file, args.docked_file)
-    else:
-        # 仅使用子代文件
+    else:  
         molecules = load_molecules_with_scores(args.docked_file)
         logger.info(f"仅使用子代文件，加载了 {len(molecules)} 个分子")
     
@@ -402,16 +392,12 @@ def main():
     molecules = add_additional_scores(molecules, cache)
     
     # 3. 使用NSGA-II进行多目标选择
-    try:
-        selected_molecules = select_molecules_nsga2(
-            molecules,
-            n_select,
-            objectives_cfg=objectives_cfg,
-            enable_crowding_distance=enable_crowding_distance,
-        )
-    except Exception as exc:
-        logger.error(f"多目标选择失败: {exc}")
-        selected_molecules = []
+    selected_molecules = select_molecules_nsga2(
+        molecules,
+        n_select,
+        objectives_cfg=objectives_cfg,
+        enable_crowding_distance=enable_crowding_distance,
+    )
     
     # 4. 保存结果
     if selected_molecules:
