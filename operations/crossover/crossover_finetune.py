@@ -22,14 +22,12 @@ def setup_logging():
     )
     return logging.getLogger("crossover_finetune")
 
-
 def _normalize_smiles_remove_explicit_h(smiles: str) -> str:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return smiles
     mol = Chem.RemoveHs(mol)
     return Chem.MolToSmiles(mol, isomericSmiles=True)
-
 
 def _normalize_unique_smiles(smiles_list):
     normalized = []
@@ -69,6 +67,7 @@ def main():
         logger.info(f"加载分子数量: {len(all_smiles)}")
     initial_population = sorted(set(all_smiles))
     input_smiles_set = set(initial_population)
+    # 构造 autogrow 风格的 (smiles, id) 对，便于“覆盖式”抽样
     ligands_list = [[smi, f"ligand_{i}"] for i, smi in enumerate(initial_population)]
     number_of_crossovers = crossover_config.get(
         "number_of_crossovers",
