@@ -75,39 +75,40 @@ def mols_to_smiles(mols):
 
 def canonicalize(smi, clear_stereo=False):
     mol = Chem.MolFromSmiles(smi)
+    if mol is None:
+        return smi
     if clear_stereo:
         Chem.RemoveStereochemistry(mol)
     return Chem.MolToSmiles(mol, isomericSmiles=True)
 
 
 def fragment_recursive(mol, frags):
-    try:
-        bonds = list(BRICS.FindBRICSBonds(mol))
+    bonds = list(BRICS.FindBRICSBonds(mol))
 
-        if bonds == []:
-            frags.append(mol)
-            return frags
+    if bonds == []:
+        frags.append(mol)
+        return frags
 
-        idxs, labs = list(zip(*bonds))
+    idxs, _labs = list(zip(*bonds))
 
-        bond_idxs = []
-        for a1, a2 in idxs:
-            bond = mol.GetBondBetweenAtoms(a1, a2)
-            bond_idxs.append(bond.GetIdx())
+    bond_idxs = []
+    for a1, a2 in idxs:
+        bond = mol.GetBondBetweenAtoms(a1, a2)
+        bond_idxs.append(bond.GetIdx())
 
-        order = np.argsort(bond_idxs).tolist()
-        bond_idxs = [bond_idxs[i] for i in order]
+    order = np.argsort(bond_idxs).tolist()
+    bond_idxs = [bond_idxs[i] for i in order]
 
-        # 只会断开一根键，也就是说，如果某个片段可以切割两个断点，但是只会切割其中一个，另一个会跟该变短视作一个整体
-        broken = Chem.FragmentOnBonds(mol,
-                                      bondIndices=[bond_idxs[0]], 
-                                      dummyLabels=[(0, 0)])
-        head, tail = Chem.GetMolFrags(broken, asMols=True)
-        # print(mol_to_smiles(head), mol_to_smiles(tail))
-        frags.append(head)
-        return fragment_recursive(tail, frags)
-    except Exception:
-        pass
+    # 只会断开一根键，也就是说，如果某个片段可以切割两个断点，但是只会切割其中一个，另一个会跟该变短视作一个整体
+    broken = Chem.FragmentOnBonds(
+        mol,
+        bondIndices=[bond_idxs[0]],
+        dummyLabels=[(0, 0)],
+    )
+    head, tail = Chem.GetMolFrags(broken, asMols=True)
+    # print(mol_to_smiles(head), mol_to_smiles(tail))
+    frags.append(head)
+    return fragment_recursive(tail, frags)
 
 def join_molecules(molA, molB):
     marked, neigh = None, None
@@ -254,25 +255,23 @@ def decompose_and_mask_molecules_dynamic(input_file: str, output_file: str, curr
     with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
         for line in tqdm(f_in, desc=f'第{current_generation}代动态掩码处理'):
             smiles = line.strip().split()[0]  # 读取SMILES            
-            try:
-                mol = Chem.MolFromSmiles(smiles)
-                if not mol:
-                    continue                
-                # 分解分子
-                _, fragments_list, num_frags, _ = break_into_fragments(mol, smiles)                
-                # 只处理能够分解的分子
-                if isinstance(fragments_list, list) and num_frags > 1:
-                    # 使用动态掩码计算
-                    n_fragments_to_mask = calculate_dynamic_mask_count(
-                        fragments_list, current_generation, max_generations
-                    )                    
-                    # 应用灵活掩码
-                    masked_sequence = apply_flexible_masking(fragments_list, n_fragments_to_mask)
-                    f_out.write(f"{masked_sequence}\n")
-                    success_count += 1                    
-            except Exception as e:
-                print(f"处理分子时出错 {smiles}: {str(e)}")
-                continue    
+            mol = Chem.MolFromSmiles(smiles)
+            if not mol:
+                continue
+
+            # 分解分子
+            _, fragments_list, num_frags, _ = break_into_fragments(mol, smiles)
+
+            # 只处理能够分解的分子
+            if isinstance(fragments_list, list) and num_frags > 1:
+                # 使用动态掩码计算
+                n_fragments_to_mask = calculate_dynamic_mask_count(
+                    fragments_list, current_generation, max_generations
+                )
+                # 应用灵活掩码
+                masked_sequence = apply_flexible_masking(fragments_list, n_fragments_to_mask)
+                f_out.write(f"{masked_sequence}\n")
+                success_count += 1
     return success_count
 
 def decompose_and_mask_molecules(input_file: str, output_file: str, n_fragments_to_mask: int = 1) -> int:
@@ -290,21 +289,19 @@ def decompose_and_mask_molecules(input_file: str, output_file: str, n_fragments_
     with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out:
         for line in tqdm(f_in, desc=f'应用{n_fragments_to_mask}片段掩码'):
             smiles = line.strip().split()[0]  # 读取SMILES            
-            try:
-                mol = Chem.MolFromSmiles(smiles)
-                if not mol:
-                    continue                
-                # 分解分子
-                _, fragments_list, num_frags, _ = break_into_fragments(mol, smiles)                
-                # 只处理能够分解的分子
-                if isinstance(fragments_list, list) and num_frags > n_fragments_to_mask:
-                    # 应用灵活掩码
-                    masked_sequence = apply_flexible_masking(fragments_list, n_fragments_to_mask)
-                    f_out.write(f"{masked_sequence}\n")
-                    success_count += 1                    
-            except Exception as e:
-                print(f"处理分子时出错 {smiles}: {str(e)}")
+            mol = Chem.MolFromSmiles(smiles)
+            if not mol:
                 continue
+
+            # 分解分子
+            _, fragments_list, num_frags, _ = break_into_fragments(mol, smiles)
+
+            # 只处理能够分解的分子
+            if isinstance(fragments_list, list) and num_frags > n_fragments_to_mask:
+                # 应用灵活掩码
+                masked_sequence = apply_flexible_masking(fragments_list, n_fragments_to_mask)
+                f_out.write(f"{masked_sequence}\n")
+                success_count += 1
     
     return success_count
 
@@ -313,30 +310,23 @@ def batch_process(input_file, output_file,output_file2,output_file3,output_file4
     with open(input_file, 'r') as f_in, open(output_file, 'w') as f_out,open(output_file2,"w") as f_out2,open(output_file3,"w") as f_out3,open(output_file4, "w") as f_out4:
         for line in tqdm(f_in, desc='Processing molecules'):
             smi = line.strip().split()[0]  # 读取每行第一个SMILES
-            try:
-                mol = Chem.MolFromSmiles(smi)
-                if not mol:
-                    f_out.write(f"{smi}\tInvalid\n")
-                    f_out2.write(f"Invalid\n")
-                    continue
-                
-                # 使用现有分解逻辑
-                _, fragments_list, num_frag, _ = break_into_fragments(mol, smi)
-                f_out.write(f"{smi}\t{str(fragments_list)}\n")            
-                if isinstance(fragments_list, list) and num_frag > 1:                       
-                    sep_joined = '[SEP]'.join(fragments_list)
-                    f_out2.write(f"[BOS]{sep_joined}[EOS]\n")
-                    f_out4.write(f"{smi}\n")  # 写入原始SMILES
-                    if len(fragments_list) > 1:
-                        truncated_list = fragments_list[:-1]
-                        truncated_joined = '[SEP]'.join(truncated_list)
-                        f_out3.write(f"[BOS]{truncated_joined}[SEP]\n")           
+            mol = Chem.MolFromSmiles(smi)
+            if not mol:
+                f_out.write(f"{smi}\tInvalid\n")
+                f_out2.write("Invalid\n")
+                continue
 
-            except Exception as e:
-                error_msg = f"{smi}\tError\n"
-                f_out.write(error_msg)
-                f_out2.write("Error\n")
-                print(f"处理失败: {smi} | 错误: {str(e)}")
+            # 使用现有分解逻辑
+            _, fragments_list, num_frag, _ = break_into_fragments(mol, smi)
+            f_out.write(f"{smi}\t{str(fragments_list)}\n")
+            if isinstance(fragments_list, list) and num_frag > 1:
+                sep_joined = '[SEP]'.join(fragments_list)
+                f_out2.write(f"[BOS]{sep_joined}[EOS]\n")
+                f_out4.write(f"{smi}\n")  # 写入原始SMILES
+                if len(fragments_list) > 1:
+                    truncated_list = fragments_list[:-1]
+                    truncated_joined = '[SEP]'.join(truncated_list)
+                    f_out3.write(f"[BOS]{truncated_joined}[SEP]\n")
 
 def main():
     """主函数，用于解析命令行参数和启动分子处理流程"""
@@ -379,4 +369,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
