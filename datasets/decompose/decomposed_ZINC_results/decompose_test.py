@@ -62,41 +62,35 @@ def strip_dummy_atoms(mol: Chem.Mol) -> Chem.Mol:
 
 def fragment_recursive(mol: Chem.Mol, frags: List[Chem.Mol]) -> List[Chem.Mol]:
     """使用BRICS规则递归地将分子分解为片段。"""
-    try:
-        bonds = list(BRICS.FindBRICSBonds(mol))
-
-        if not bonds:
-            frags.append(mol)
-            return frags
-
-        idxs, _ = list(zip(*bonds))
-
-        bond_idxs = []
-        for a1, a2 in idxs:
-            bond = mol.GetBondBetweenAtoms(a1, a2)
-            if bond:
-                bond_idxs.append(bond.GetIdx())
-        
-        if not bond_idxs:
-            frags.append(mol)
-            return frags
-
-        order = np.argsort(bond_idxs).tolist()
-        bond_idxs = [bond_idxs[i] for i in order]
-
-        broken = Chem.FragmentOnBonds(mol, bondIndices=[bond_idxs[0]], dummyLabels=[(0, 0)])
-        res = Chem.GetMolFrags(broken, asMols=True, sanitizeFrags=False)
-
-        if len(res) == 2:
-            head, tail = res
-            frags.append(head)
-            return fragment_recursive(tail, frags)
-        else:
-            frags.append(mol)
-            return frags
-    except Exception:
+    bonds = list(BRICS.FindBRICSBonds(mol))
+    if not bonds:
         frags.append(mol)
         return frags
+
+    idxs, _ = list(zip(*bonds))
+    bond_idxs = []
+    for a1, a2 in idxs:
+        bond = mol.GetBondBetweenAtoms(a1, a2)
+        if bond:
+            bond_idxs.append(bond.GetIdx())
+
+    if not bond_idxs:
+        frags.append(mol)
+        return frags
+
+    order = np.argsort(bond_idxs).tolist()
+    bond_idxs = [bond_idxs[i] for i in order]
+
+    broken = Chem.FragmentOnBonds(mol, bondIndices=[bond_idxs[0]], dummyLabels=[(0, 0)])
+    res = Chem.GetMolFrags(broken, asMols=True, sanitizeFrags=False)
+
+    if len(res) == 2:
+        head, tail = res
+        frags.append(head)
+        return fragment_recursive(tail, frags)
+
+    frags.append(mol)
+    return frags
 
 
 def join_molecules(molA: Chem.Mol, molB: Chem.Mol) -> Chem.Mol:
@@ -177,27 +171,17 @@ def process_smiles_file(input_file: str, decomp_output_file: str, gpt_output_fil
                 continue
             smi = parts[0]
 
-            try:
-                mol = Chem.MolFromSmiles(smi)
-                if not mol:
-                    f_decomp_out.write(f"{smi}\t无效的SMILES\n")
-                    continue
+            mol = Chem.MolFromSmiles(smi)
+            if not mol:
+                f_decomp_out.write(f"{smi}\t无效的SMILES\n")
+                continue
 
-                # 分解分子
-                _, fragments_list, _, _ = break_into_fragments(mol, smi)
-                
-                # 将分解结果写入第一个输出文件
-                f_decomp_out.write(f"{smi}\t{str(fragments_list)}\n")
-                
-                # 将片段连接为GPT格式
-                sep_joined = '[SEP]'.join(fragments_list)
-                f_gpt_out.write(f"[BOS]{sep_joined}[EOS]\n")
-                success_count += 1
+            _, fragments_list, _, _ = break_into_fragments(mol, smi)
+            f_decomp_out.write(f"{smi}\t{str(fragments_list)}\n")
 
-            except Exception as e:
-                error_msg = f"处理时发生错误: {e}"
-                f_decomp_out.write(f"{smi}\t{error_msg}\n")
-                print(f"处理SMILES失败: {smi} | 错误: {str(e)}")
+            sep_joined = '[SEP]'.join(fragments_list)
+            f_gpt_out.write(f"[BOS]{sep_joined}[EOS]\n")
+            success_count += 1
     
     print(f"\n处理完成。成功处理 {success_count}/{len(lines)} 个分子。")
 
