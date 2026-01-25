@@ -125,59 +125,46 @@ class GAWorkflowExecutor:
         去除SMILES文件中的重复分子,并为每个分子添加唯一ID。
         输出格式: SMILES  ligand_id_X
         """
-        try:
-            unique_smiles = set()
-            with open(input_file, 'r') as f:
-                for line in f:
-                    smiles = line.strip().split()[0]  # 取第一列作为SMILES
-                    if smiles:
-                        unique_smiles.add(smiles)
-            
-            # 转换为列表以保证顺序
-            unique_smiles_list = sorted(list(unique_smiles))
-            
-            with open(output_file, 'w') as f:
-                for i, smiles in enumerate(unique_smiles_list):
-                    ligand_id = f"ligand_id_{i}"
-                    f.write(f"{smiles}\t{ligand_id}\n")
-            
-            logger.info(f"去重完成: {len(unique_smiles_list)} 个独特分子保存到 {output_file} (已添加ID)")
-            return len(unique_smiles_list)
-        except Exception as e:
-            logger.error(f"去重失败: {e}", exc_info=True)
-            return 0
+        unique_smiles = set()
+        with open(input_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if not parts:
+                    continue
+                unique_smiles.add(parts[0])
+        
+        unique_smiles_list = sorted(list(unique_smiles))
+        
+        with open(output_file, 'w') as f:
+            for i, smiles in enumerate(unique_smiles_list):
+                ligand_id = f"ligand_id_{i}"
+                f.write(f"{smiles}\t{ligand_id}\n")
+        
+        logger.info(f"去重完成: {len(unique_smiles_list)} 个独特分子保存到 {output_file} (已添加ID)")
+        return len(unique_smiles_list)
     
     def _combine_files(self, file_list: List[str], output_file: str) -> bool:
         """合并多个文件"""
-        try:
-            with open(output_file, 'w') as outf:
-                for file_path in file_list:
-                    with open(file_path, 'r') as inf:
-                        for line in inf:
-                            line = line.strip()
-                            if line:
-                                outf.write(line + '\n')
-            return True
-        except Exception as e:
-            logger.error(f"合并文件失败: {e}", exc_info=True)
-            return False
+        with open(output_file, 'w') as outf:
+            for file_path in file_list:
+                with open(file_path, 'r') as inf:
+                    for line in inf:
+                        line = line.strip()
+                        if line:
+                            outf.write(line + '\n')
+        return True
     
     def _extract_smiles_from_docked_file(self, docked_file: str, output_smiles_file: str) -> bool:#提取分数       
-        try:
-            with open(docked_file, 'r') as infile, open(output_smiles_file, 'w') as outfile:
-                for line in infile:
-                    line = line.strip()
-                    if line:
-                        # 提取第一列作为SMILES
-                        smiles = line.split()[0]
-                        outfile.write(f"{smiles}\n")
-            
-            extracted_count = self._count_molecules(output_smiles_file)
-            logger.debug(f"从 {docked_file} 提取了 {extracted_count} 个SMILES到 {output_smiles_file}")
-            return True
-        except Exception as e:
-            logger.error(f"提取SMILES失败: {e}", exc_info=True)
-            return False
+        with open(docked_file, 'r') as infile, open(output_smiles_file, 'w') as outfile:
+            for line in infile:
+                line = line.strip()
+                if line:
+                    smiles = line.split()[0]
+                    outfile.write(f"{smiles}\n")
+        
+        extracted_count = self._count_molecules(output_smiles_file)
+        logger.debug(f"从 {docked_file} 提取了 {extracted_count} 个SMILES到 {output_smiles_file}")
+        return True
     
     def run_initial_generation(self) -> str:
         """
