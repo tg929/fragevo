@@ -63,7 +63,7 @@
     "default_receptor": {
       "name": "parp1",
       "description": "PARP1 receptor (default).",
-      "file": "tutorial/parp1.pdbqt",
+      "file": "pdb2/parp1.pdbqt",
       "center_x": 26.413,
       "center_y": 11.282,
       "center_z": 27.238,
@@ -75,7 +75,7 @@
       "parp1": {
         "name": "parp1",
         "description": "PARP1 receptor",
-        "file": "tutorial/parp1.pdbqt",
+        "file": "pdb2/parp1.pdbqt",
         "center_x": 26.413,
         "center_y": 11.282,
         "center_z": 27.238,
@@ -86,7 +86,7 @@
       "fa7": {
         "name": "fa7",
         "description": "FA7 receptor",
-        "file": "tutorial/fa7.pdbqt",
+        "file": "pdb2/fa7.pdbqt",
         "center_x": 10.131,
         "center_y": 41.879,
         "center_z": 32.097,
@@ -97,7 +97,7 @@
       "5ht1b": {
         "name": "5ht1b",
         "description": "5HT1B receptor",
-        "file": "tutorial/5ht1b.pdbqt",
+        "file": "pdb2/5ht1b.pdbqt",
         "center_x": -26.602,
         "center_y": 5.277,
         "center_z": 17.898,
@@ -108,7 +108,7 @@
       "braf": {
         "name": "braf",
         "description": "BRAF receptor",
-        "file": "tutorial/braf.pdbqt",
+        "file": "pdb2/braf.pdbqt",
         "center_x": 84.194,
         "center_y": 6.949,
         "center_z": -7.081,
@@ -119,7 +119,7 @@
       "jak2": {
         "name": "jak2",
         "description": "JAK2 receptor",
-        "file": "tutorial/jak2.pdbqt",
+        "file": "pdb2/jak2.pdbqt",
         "center_x": 114.758,
         "center_y": 65.496,
         "center_z": 11.345,

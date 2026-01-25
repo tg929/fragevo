@@ -2,7 +2,7 @@
 
 1.对接
 docking_finetune.py
-命令：python operations/docking/docking_finetune.py --smiles_file datasets/source_compounds/naphthalene_smiles.smi --output_file output_testing_docking.smi --receptor tutorial/PARP/4r6eA_PARP1_prepared.pdbqt
+命令：python operations/docking/docking_finetune.py --smiles_file datasets/source_compounds/naphthalene_smiles.smi --output_file output_testing_docking.smi --receptor pdb2/PARP/4r6eA_PARP1_prepared.pdbqt
 
 2.交叉
 crossover_finetune.py
@@ -27,7 +27,7 @@ python operations/filter/filter.py --smiles_file output_testing_mutation.smi --o
 
 4.再次对接评分
 docking_finetune.py
-命令：python operations/docking/docking_finetune.py --smiles_file 子代：种群 --output_file output_testing_docking1.smi --receptor tutorial/PARP/4r6eA_PARP1_prepared.pdbqt
+命令：python operations/docking/docking_finetune.py --smiles_file 子代：种群 --output_file output_testing_docking1.smi --receptor pdb2/PARP/4r6eA_PARP1_prepared.pdbqt
 
 5.选择
 filter.py 
@@ -59,6 +59,5 @@ python operations/mutation/mutation_finetune.py --smiles_file datasets/source_co
 5.选择
 python operations/selecting/molecular_selection.py --docked_file test_selection.smi --parent_file test_parent.smi --output_file test_config_output.smi
 默认参数：同autogrow
-
 
 
