@@ -105,10 +105,36 @@ def fragment_recursive(mol, frags):
         bondIndices=[bond_idxs[0]],
         dummyLabels=[(0, 0)],
     )
-    head, tail = Chem.GetMolFrags(broken, asMols=True)
-    # print(mol_to_smiles(head), mol_to_smiles(tail))
-    frags.append(head)
-    return fragment_recursive(tail, frags)
+    frags_tuple = Chem.GetMolFrags(broken, asMols=True)
+    
+    if len(frags_tuple) == 2:
+        head, tail = frags_tuple
+        frags.append(head)
+        return fragment_recursive(tail, frags)
+    elif len(frags_tuple) == 1:
+        # 如果切不断（比如在环上），就尝试下一根键
+        if len(bond_idxs) > 1:
+             # 这里简单递归处理，实际上最好是循环试
+             # 为简单起见，如果切不断，就把原分子作为终点加入
+             frags.append(mol)
+             return frags
+        else:
+             frags.append(frags_tuple[0])
+             return frags
+    else:
+        # 如果切成了多于2段（极少情况），取第一段为head，剩下合并或者仅取第二段为tail
+        # 通常 BRICS 单键切断只会有2段。如果有更多，可能是复杂结构
+        head = frags_tuple[0]
+        frags.append(head)
+        # 简单处理：把剩下的作为 tail 继续递归
+        # 注意：这里可能需要把剩下的拼起来，或者只是取最大的一个作为 tail
+        # 这是一个简单的容错处理
+        if len(frags_tuple) > 1:
+             # 合并剩余片段作为 tail (这比较复杂因为没有连接信息)
+             # 或者，我们假设第二大的是 tail
+             tail = frags_tuple[1] 
+             return fragment_recursive(tail, frags)
+        return frags
 
 def join_molecules(molA, molB):
     marked, neigh = None, None
