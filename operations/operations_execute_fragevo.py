@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import logging
+import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set
 import threading
@@ -552,7 +553,9 @@ class FragEvoWorkflowExecutor:
             bool: 脚本是否执行成功。
         """
         full_script_path = self.project_root / script_path
-        cmd = ['python', str(full_script_path)] + args
+        # Use the same interpreter as the main FragEvo process to avoid
+        # environment mismatches (e.g., rdkit/SA scorer unavailable in system python).
+        cmd = [sys.executable, str(full_script_path)] + args
         logger.debug(f"Executing command: {' '.join(cmd)}")
 
         env = os.environ.copy()
@@ -1015,36 +1018,8 @@ class FragEvoWorkflowExecutor:
         docked_count = self._count_molecules(str(offspring_docked_file))
         logger.info(f"第 {generation} 代: 子代评估完成，{docked_count} 个分子已对接。")
 
-        # --- 新增: 计算并保存 QED 和 SA 分数 ---
-        try:
-            # 1. 读取对接结果
-            molecules = []
-            with open(offspring_docked_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        molecules.append({'smiles': parts[0], 'docking_score': float(parts[1])})
-            
-            # 2. 计算 QED 和 SA (利用现有的 metric_cache)
-            from operations.selecting.selecting_multi import add_additional_scores
-            molecules = add_additional_scores(molecules, self.metric_cache)
-            
-            # 3. 覆盖写入文件，格式: SMILES docking_score qed_score sa_score
-            temp_file = str(offspring_docked_file) + ".tmp"
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                for mol in molecules:
-                    smiles = mol['smiles']
-                    ds = mol.get('docking_score', 0.0)
-                    qed = mol.get('qed_score', 0.0)
-                    sa = mol.get('sa_score', 10.0)
-                    f.write(f"{smiles}\t{ds:.4f}\t{qed:.4f}\t{sa:.4f}\n")
-            
-            shutil.move(temp_file, offspring_docked_file)
-            logger.info(f"已更新子代文件，添加了 QED 和 SA 分数: {offspring_docked_file}")
-            
-        except Exception as e:
-            logger.error(f"计算/保存子代 QED/SA 分数时出错: {e}")
-        # -------------------------------------
+        # NOTE: offspring_docked.smi 仅保留 docking 输出（SMILES + docking_score）。
+        # QED/SA 将在选择阶段严格计算，但不回写到任何 .smi 记录文件中。
 
         offspring_mapping = self._ingest_population_metrics(offspring_docked_file, generation, mark_active=False)
         self.last_offspring_histories = set(offspring_mapping.values())

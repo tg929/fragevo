@@ -255,10 +255,12 @@ def main():
     remaining.sort(key=lambda d: d['comp_score'], reverse=True)
     selected = elites + (remaining[:max(0, n_select - len(elites))] if n_select > 0 else remaining)
 
+    # Keep record files consistent across entrypoints:
+    # do not write QED/SA/comp_score into population files.
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, 'w', encoding='utf-8') as f:
         for m in selected:
-            f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\t{m['qed_score']:.6f}\t{m['sa_score']:.6f}\t{m['comp_score']:.6f}\n")
+            f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\n")
 
     # Optional stats file next to output
     if settings.get('write_stats', True):

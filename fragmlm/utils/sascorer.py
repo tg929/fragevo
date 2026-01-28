@@ -23,7 +23,8 @@ def readFragmentScores(name='fpscores'):
     # 1) Original expected location: <name>.pkl.gz or <name>.pkl
     candidates.append(name)
     # 2) Fallback to repo-shipped fpscores.pkl (non-gz) if present
-    repo_root = op.abspath(op.join(op.dirname(__file__), "..", "..", ".."))
+    
+    repo_root = op.abspath(op.join(op.dirname(__file__), "..", ".."))
     candidates.append(op.join(repo_root, "oracle", "fpscores"))
     candidates.append(op.join(repo_root, "operations", "selecting", "oracle", "fpscores"))
 

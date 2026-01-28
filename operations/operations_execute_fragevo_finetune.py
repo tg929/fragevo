@@ -213,7 +213,7 @@ class FragEvoWorkflowExecutor:
             bool: 脚本是否执行成功。
         """
         full_script_path = self.project_root / script_path
-        cmd = ['python', str(full_script_path)] + args        
+        cmd = [sys.executable, str(full_script_path)] + args        
         logger.debug(f"执行命令: {' '.join(cmd)}")        
         
         env = os.environ.copy()

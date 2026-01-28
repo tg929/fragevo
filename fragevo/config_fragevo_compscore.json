@@ -6,7 +6,7 @@
   "workflow": {
     "output_directory": "FragEvo_output_compscore",
     "max_generations": 10,
-    "initial_population_file": "datasets/initial_population/my_initial_population.smi"
+    "initial_population_file": "datasets/initial_population/initial_population.smi"
   },
   "gpt": {
     "seed": 42,
