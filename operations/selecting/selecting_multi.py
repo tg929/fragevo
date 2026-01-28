@@ -366,9 +366,6 @@ def main():
     enable_crowding_distance = bool(multi_cfg.get("enable_crowding_distance", True))
     enhanced_strategy = (multi_cfg.get("enhanced_strategy") or "standard").strip().lower()
 
-    if enhanced_strategy not in ("standard", "nsga2"):
-        logger.warning(f"当前 selecting_multi.py 未实现 enhanced_strategy='{enhanced_strategy}'，将回退到标准NSGA-II。")
-
     cache_path = args.cache_file
     if not cache_path:
         out_path = os.path.abspath(args.output_file)
@@ -378,26 +375,81 @@ def main():
 
     # 1. 加载分子数据
     if args.parent_file:
-   
-        molecules = load_molecules_from_combined_files(args.parent_file, args.docked_file)
+        molecules_data = load_molecules_from_combined_files(args.parent_file, args.docked_file)
     else:  
-        molecules = load_molecules_with_scores(args.docked_file)
-        logger.info(f"仅使用子代文件，加载了 {len(molecules)} 个分子")
+        molecules_data = load_molecules_with_scores(args.docked_file)
+        logger.info(f"仅使用子代文件，加载了 {len(molecules_data)} 个分子")
     
-    if not molecules:
+    if not molecules_data:
         logger.error("错误: 无法加载分子数据")
         return    
     
     # 2. 计算QED和SA分数
-    molecules = add_additional_scores(molecules, cache)
-    
-    # 3. 使用NSGA-II进行多目标选择
-    selected_molecules = select_molecules_nsga2(
-        molecules,
-        n_select,
-        objectives_cfg=objectives_cfg,
-        enable_crowding_distance=enable_crowding_distance,
-    )
+    molecules_data = add_additional_scores(molecules_data, cache)
+
+    if enhanced_strategy == "adaptive":
+        logger.info("启用自适应选择策略（Adaptive Selection Strategy）...")
+        # 1. 计算当前的进化状态（这里简单使用代数信息，或者种群的平均分数变化）
+        # 在这里我们简单地根据是否传入了 parent_file 来判断是否是第一代以后的代数
+        # 更复杂的逻辑需要传递 generation 参数
+        
+        # 2. 动态调整 n_select 或 目标权重
+        # 目前 NSGA-II 主要是基于帕累托支配，不直接使用权重。
+        # 但我们可以通过预筛选来模拟压力的变化。
+        
+        # 简单实现：在早期更注重多样性（拥挤度距离），晚期更注重收敛性。
+        # 由于 NSGA-II 本身已经很好地平衡了两者，这里我们可以做一个简单的增强：
+        # 如果是 adaptive 模式，我们强制确保选择的分子中包含了单目标（docking score）最优的前 10%
+        
+        # 1. 先选出 docking score 最好的 Top K (作为精英保留)
+        top_k_elite_ratio = 0.1
+        n_elite = max(1, int(n_select * top_k_elite_ratio))
+        
+        molecules_data.sort(key=lambda x: x.get('docking_score', float('inf')))
+        elite_molecules = molecules_data[:n_elite]
+        logger.info(f"Adaptive策略: 强制保留 {len(elite_molecules)} 个最佳对接分数的精英分子。")
+        
+        # 2. 剩下的名额用 NSGA-II 填充
+        remaining_n = n_select - len(elite_molecules)
+        if remaining_n > 0:
+            # 排除已经选中的精英，避免重复（虽然NSGA-II结果本身也是基于全部数据的）
+            # 为了简单起见，我们直接对全集做 NSGA-II，然后合并去重
+            nsga2_selected = select_molecules_nsga2(
+                molecules_data,
+                n_select, # 这里还是选 n_select 个，然后和 elite 合并去重
+                objectives_cfg=objectives_cfg,
+                enable_crowding_distance=enable_crowding_distance
+            )
+            
+            # 合并 elite 和 nsga2_selected
+            final_selection_map = {m['smiles']: m for m in elite_molecules}
+            for m in nsga2_selected:
+                if len(final_selection_map) >= n_select:
+                    break
+                if m['smiles'] not in final_selection_map:
+                    final_selection_map[m['smiles']] = m
+            
+            selected_molecules = list(final_selection_map.values())
+        else:
+            selected_molecules = elite_molecules
+
+    elif enhanced_strategy not in ("standard", "nsga2"):
+        logger.warning(f"当前 selecting_multi.py 未实现 enhanced_strategy='{enhanced_strategy}'，将回退到标准NSGA-II。")
+        # 3. 使用NSGA-II进行多目标选择
+        selected_molecules = select_molecules_nsga2(
+            molecules_data,
+            n_select,
+            objectives_cfg=objectives_cfg,
+            enable_crowding_distance=enable_crowding_distance,
+        )
+    else:
+        # 标准模式
+        selected_molecules = select_molecules_nsga2(
+            molecules_data,
+            n_select,
+            objectives_cfg=objectives_cfg,
+            enable_crowding_distance=enable_crowding_distance,
+        )
     
     # 4. 保存结果
     if selected_molecules:
