@@ -190,7 +190,7 @@
   },
   "crossover_finetune": {
     "description": "crossover setting:number_of_crossovers: int>0; min_atom_match_mcs/max_time_mcs_*: int/float>0; protanate_step: true|false.",
-    "number_of_crossovers": 100,
+    "number_of_crossovers": 300,
     "min_atom_match_mcs": 4,
     "max_time_mcs_prescreen": 1,
     "max_time_mcs_thorough": 1,
@@ -198,7 +198,7 @@
   },
   "mutation_finetune": {
     "description": "mutation setting:number_of_mutants: int>0; rxn_library:all_rxns|click_chem_rxns|robust_rxns.",
-    "number_of_mutants": 100,
+    "number_of_mutants": 300,
     "rxn_library": "all_rxns",
     "rxn_library_file": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_rxn_library.json",
     "function_group_library": "autogrow/operators/mutation/smiles_click_chem/reaction_libraries/all_rxns/All_Rxns_functional_groups.json",
@@ -244,7 +244,7 @@
           "direction": "minimize"
         }
       ],
-      "enhanced_strategy": "standard",
+      "enhanced_strategy": "adaptive",
       "enable_crowding_distance": true,
       "verbose": false
     }

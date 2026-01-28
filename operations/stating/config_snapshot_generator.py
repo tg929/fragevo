@@ -180,6 +180,7 @@ class ConfigSnapshotGenerator:
                 "description": multi_settings.get("description"),
                 "n_select": multi_settings.get("n_select"),
                 "objectives": multi_settings.get("objectives"),
+                "enhanced_strategy": multi_settings.get("enhanced_strategy"),
                 "enable_crowding_distance": multi_settings.get("enable_crowding_distance"),
                 "verbose": multi_settings.get("verbose")
             }
@@ -243,6 +244,8 @@ class ConfigSnapshotGenerator:
         gpt_config = self.original_config.get("gpt", {})
         if gpt_config:
             self.used_config["gpt"] = {
+                "n_fragments_to_mask": gpt_config.get("n_fragments_to_mask"),
+                "dynamic_masking": gpt_config.get("dynamic_masking"),
                 "mask_last_n_fragments": gpt_config.get("mask_last_n_fragments"),
                 "model_path": gpt_config.get("model_path"),
                 "temperature": gpt_config.get("temperature"),

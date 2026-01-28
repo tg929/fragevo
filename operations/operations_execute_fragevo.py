@@ -1015,6 +1015,37 @@ class FragEvoWorkflowExecutor:
         docked_count = self._count_molecules(str(offspring_docked_file))
         logger.info(f"第 {generation} 代: 子代评估完成，{docked_count} 个分子已对接。")
 
+        # --- 新增: 计算并保存 QED 和 SA 分数 ---
+        try:
+            # 1. 读取对接结果
+            molecules = []
+            with open(offspring_docked_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        molecules.append({'smiles': parts[0], 'docking_score': float(parts[1])})
+            
+            # 2. 计算 QED 和 SA (利用现有的 metric_cache)
+            from operations.selecting.selecting_multi import add_additional_scores
+            molecules = add_additional_scores(molecules, self.metric_cache)
+            
+            # 3. 覆盖写入文件，格式: SMILES docking_score qed_score sa_score
+            temp_file = str(offspring_docked_file) + ".tmp"
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                for mol in molecules:
+                    smiles = mol['smiles']
+                    ds = mol.get('docking_score', 0.0)
+                    qed = mol.get('qed_score', 0.0)
+                    sa = mol.get('sa_score', 10.0)
+                    f.write(f"{smiles}\t{ds:.4f}\t{qed:.4f}\t{sa:.4f}\n")
+            
+            shutil.move(temp_file, offspring_docked_file)
+            logger.info(f"已更新子代文件，添加了 QED 和 SA 分数: {offspring_docked_file}")
+            
+        except Exception as e:
+            logger.error(f"计算/保存子代 QED/SA 分数时出错: {e}")
+        # -------------------------------------
+
         offspring_mapping = self._ingest_population_metrics(offspring_docked_file, generation, mark_active=False)
         self.last_offspring_histories = set(offspring_mapping.values())
         self.last_offspring_smiles = set(offspring_mapping.keys())
