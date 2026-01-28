@@ -243,6 +243,7 @@ def load_molecules_with_scores_and_deduplicate(parent_file: str, docked_file: st
 def main():
     import argparse
     from operations.selecting.selecting_multi import add_additional_scores, save_selected_molecules_with_scores, print_selection_statistics
+    from utils.chem_metrics import ChemMetricCache
     
     parser = argparse.ArgumentParser(description="enhanced_multi_selection")
     parser.add_argument('--docked_file', type=str, required=True, help='--docked_file')
@@ -250,6 +251,7 @@ def main():
     parser.add_argument('--output_file', type=str, required=True, help='--output_file')
     parser.add_argument('--n_select', type=int, required=True, help='--n_select')
     parser.add_argument('--strategy', type=str, default='enhanced', help='--strategy')
+    parser.add_argument('--cache_file', type=str, default=None, help='--cache_file')
     
     args = parser.parse_args()
     
@@ -267,7 +269,18 @@ def main():
         return
     
     # 2. 计算QED和SA分数
-    molecules = add_additional_scores(molecules)
+    cache = ChemMetricCache(args.cache_file)
+    molecules = add_additional_scores(molecules, cache)
+
+    # 严格模式：丢弃无法计算QED/SA的分子
+    before = len(molecules)
+    molecules = [m for m in molecules if m.get('_metrics_valid')]
+    dropped = before - len(molecules)
+    if dropped:
+        logger.warning(f"严格QED/SA计算: 丢弃 {dropped}/{before} 个无法计算性质的分子。")
+    if not molecules:
+        logger.error("严格QED/SA计算后无可用分子，无法进行选择。")
+        return
     
     # 3. 根据策略选择算法
     if args.strategy == 'enhanced':

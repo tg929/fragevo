@@ -262,20 +262,24 @@ def add_additional_scores(molecules: List[Dict], cache: ChemMetricCache) -> List
 
     logger.info(f"开始为 {len(molecules)} 个分子计算QED和SA分数(带缓存)...")
 
-    unique_smiles = list({m.get("smiles") for m in molecules if m.get("smiles")})
-    for smi in unique_smiles:
-        cache.get_or_compute(smi)
-    cache.flush()
-
     for mol_data in molecules:
         smi = mol_data.get("smiles")
         if not smi:
-            mol_data["qed_score"] = 0.0
-            mol_data["sa_score"] = 10.0
+            mol_data["_metrics_valid"] = False
             continue
-        qed, sa = cache.get(smi)
-        mol_data["qed_score"] = 0.0 if qed is None else float(qed)
-        mol_data["sa_score"] = 10.0 if sa is None else float(sa)
+
+        # Strict computation at selection time:
+        # - Always compute (or recompute) missing values
+        # - If we still can't compute, mark invalid and exclude from selection
+        qed, sa = cache.get_or_compute(smi)
+        if qed is None or sa is None:
+            mol_data["_metrics_valid"] = False
+            continue
+        mol_data["qed_score"] = float(qed)
+        mol_data["sa_score"] = float(sa)
+        mol_data["_metrics_valid"] = True
+
+    cache.flush()
         
     logger.info(f"完成所有 {len(molecules)} 个分子的分数计算。")
     return molecules
@@ -296,7 +300,7 @@ def save_selected_molecules_with_scores(selected_molecules, output_file):
         selected_molecules: 选中的分子数据列表
         output_file: 输出文件路径
         
-    输出格式: SMILES\tdocking_score\tqed_score\tsa_score
+    输出格式: SMILES\tdocking_score
     """
     # 按对接分数排序（分数越低越好，升序排列）
     sorted_molecules = sorted(selected_molecules, key=lambda mol: mol['docking_score'])
@@ -305,9 +309,7 @@ def save_selected_molecules_with_scores(selected_molecules, output_file):
         for mol_data in sorted_molecules:
             smiles = mol_data['smiles']
             docking = mol_data['docking_score']
-            qed = mol_data.get('qed_score', 0.0)
-            sa = mol_data.get('sa_score', 5.0)
-            f.write(f"{smiles}\t{docking:.4f}\t{qed:.4f}\t{sa:.4f}\n")
+            f.write(f"{smiles}\t{docking:.4f}\n")
     
     logger.info(f"已保存 {len(sorted_molecules)} 个选中的分子及分数(已按对接分数排序)到 {output_file}")
 
@@ -386,6 +388,15 @@ def main():
     
     # 2. 计算QED和SA分数
     molecules_data = add_additional_scores(molecules_data, cache)
+
+    # Strict mode: drop molecules whose QED/SA cannot be computed.
+    before = len(molecules_data)
+    molecules_data = [m for m in molecules_data if m.get("_metrics_valid")]
+    dropped = before - len(molecules_data)
+    if dropped:
+        logger.warning(f"严格QED/SA计算: 丢弃 {dropped}/{before} 个无法计算性质的分子。")
+    if not molecules_data:
+        raise RuntimeError("严格QED/SA计算后无可用分子，无法进行选择。")
 
     if enhanced_strategy == "adaptive":
         logger.info("启用自适应选择策略（Adaptive Selection Strategy）...")

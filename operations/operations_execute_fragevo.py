@@ -553,8 +553,7 @@ class FragEvoWorkflowExecutor:
             bool: 脚本是否执行成功。
         """
         full_script_path = self.project_root / script_path
-        # Use the same interpreter as the main FragEvo process to avoid
-        # environment mismatches (e.g., rdkit/SA scorer unavailable in system python).
+        
         cmd = [sys.executable, str(full_script_path)] + args
         logger.debug(f"Executing command: {' '.join(cmd)}")
 
