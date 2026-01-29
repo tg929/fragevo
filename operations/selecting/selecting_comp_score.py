@@ -255,12 +255,20 @@ def main():
     remaining.sort(key=lambda d: d['comp_score'], reverse=True)
     selected = elites + (remaining[:max(0, n_select - len(elites))] if n_select > 0 else remaining)
 
-    # Keep record files consistent across entrypoints:
-    # do not write QED/SA/comp_score into population files.
+    # CompScore workflow output format (requested):
+    # SMILES\tdocking_score\tDS_hat\tQED\tSA_raw\tSA_hat\tcomp_score
     os.makedirs(os.path.dirname(args.output_file), exist_ok=True)
     with open(args.output_file, 'w', encoding='utf-8') as f:
         for m in selected:
-            f.write(f"{m['smiles']}\t{m['docking_score']:.6f}\n")
+            ds = float(m['docking_score'])
+            qed = float(m['qed_score'])
+            sa_raw = float(m['sa_score'])
+            ds_hat = normalize_ds(ds, ds_clip_min, ds_clip_max)
+            sa_hat = normalize_sa(sa_raw, sa_max_value, sa_denominator)
+            y = float(m['comp_score'])
+            f.write(
+                f"{m['smiles']}\t{ds:.6f}\t{ds_hat:.6f}\t{qed:.6f}\t{sa_raw:.6f}\t{sa_hat:.6f}\t{y:.6f}\n"
+            )
 
     # Optional stats file next to output
     if settings.get('write_stats', True):

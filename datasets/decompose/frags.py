@@ -137,28 +137,47 @@ def fragment_recursive(mol, frags):
         return frags
 
 def join_molecules(molA, molB):
+    """Join molA into molB by replacing a dummy atom in molB with molA.
+
+    Returns None if dummy/neighbor topology is invalid.
+    """
     marked, neigh = None, None
+
+    # Find dummy atom (atomic num 0) in molA and its (only) neighbor.
     for atom in molA.GetAtoms():
         if atom.GetAtomicNum() == 0:
             marked = atom.GetIdx()
-            neigh = atom.GetNeighbors()[0]
+            neighbors = list(atom.GetNeighbors())
+            if not neighbors:
+                # Broken fragment: dummy atom is disconnected.
+                return None
+            neigh = neighbors[0]
             break
-    neigh = 0 if neigh is None else neigh.GetIdx()
 
-    if marked is not None:
-        ed = Chem.EditableMol(molA)
-        if neigh > marked:
-            neigh = neigh - 1
-        ed.RemoveAtom(marked)
-        molA = ed.GetMol()
+    if marked is None:
+        return None
 
-    joined = Chem.ReplaceSubstructs(
-        molB, dummy, molA,
-        replacementConnectionPoint=neigh,
-        useChirality=False)[0]
+    neigh_idx = 0 if neigh is None else neigh.GetIdx()
 
-    Chem.Kekulize(joined)
-    return joined
+    # Remove dummy atom from molA; adjust neighbor index if needed.
+    ed = Chem.EditableMol(molA)
+    if neigh_idx > marked:
+        neigh_idx -= 1
+    ed.RemoveAtom(marked)
+    molA = ed.GetMol()
+
+    try:
+        joined = Chem.ReplaceSubstructs(
+            molB,
+            dummy,
+            molA,
+            replacementConnectionPoint=neigh_idx,
+            useChirality=False,
+        )[0]
+        Chem.Kekulize(joined, clearAromaticFlags=True)
+        return joined
+    except Exception:
+        return None
 
 def reconstruct(frags, reverse=False):
     if len(frags) == 1:
@@ -175,13 +194,19 @@ def reconstruct(frags, reverse=False):
             return None, None
     
     mol = join_molecules(frags[0], frags[1])
-    for i, frag in enumerate(frags[2:]):
-        #print(i, mol_to_smiles(frag), mol_to_smiles(mol))
+    if mol is None:
+        return None, None
+
+    for frag in frags[2:]:
         mol = join_molecules(mol, frag)
-        #print(i, mol_to_smiles(mol))
+        if mol is None:
+            return None, None
 
     # see if there are kekulization/valence errors
-    mol_to_smiles(mol)
+    try:
+        mol_to_smiles(mol)
+    except Exception:
+        return None, None
 
     return mol, frags
         

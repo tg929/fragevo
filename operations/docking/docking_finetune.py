@@ -704,28 +704,43 @@ def run_molecular_docking(config: Dict, ligands_file: str, generation_dir: str, 
     # 实例化工作流，并传入配体文件路径
     workflow = DockingWorkflow(config, generation_dir, ligands_file)
 
-    # 如果指定了受体，则切换到该受体
+    # 如果指定了受体，则切换到该受体；否则使用 __init__ 中加载的默认受体
     if receptor_name:
         workflow.set_receptor(receptor_name, config)
 
-        # 1. 准备受体
-        receptor_pdbqt = workflow.prepare_receptor()
-        if not receptor_pdbqt:
-            logger.error("受体准备失败")
-            return None
-        
+    # 1. 准备受体
+    receptor_pdbqt = workflow.prepare_receptor()
+    if not receptor_pdbqt:
+        logger.error("受体准备失败")
+        return None
+
+    pipeline = (workflow.vars.get('pipeline') or 'autogrow').strip().lower()
+
+    # 2. 根据 pipeline 执行不同对接流程
+    if pipeline in ('obabel_fast', 'obabel-fast'):
+        obabel_path = workflow.vars.get('obabel_path')
+        if not obabel_path:
+            # Avoid cryptic NoneType crashes.
+            raise RuntimeError(
+                "docking.pipeline=obabel_fast 但未设置 docking.obabel_path，且系统 PATH 中也未发现 obabel。"
+            )
         final_results_file = workflow.run_obabel_fast_docking(receptor_pdbqt, ligands_file)
-        
-        if final_results_file and os.path.exists(final_results_file):
-            logger.info(f"对接成功完成。最终结果保存在: {final_results_file}")
-            return final_results_file
-        else:
-            logger.error("对接流程失败，未生成有效的输出文件。")
-            return None
+    else:
+        # Default AutoGrow-style pipeline: SMILES -> 3D -> PDBQT -> docking
+        ligand_dir = workflow.prepare_ligands(ligands_file)
+        final_results_file = workflow.run_docking(receptor_pdbqt, ligand_dir)
+
+    if final_results_file and os.path.exists(final_results_file):
+        logger.info(f"对接成功完成。最终结果保存在: {final_results_file}")
+        return final_results_file
+
+    logger.error("对接流程失败，未生成有效的输出文件。")
+    return None
 
 def main():
     """主函数，用于独立运行此脚本。"""
     import argparse
+    import errno
     import json
     import shutil
 
@@ -759,10 +774,23 @@ def main():
     final_output_file = run_molecular_docking(config, args.smiles_file, args.generation_dir, args.receptor)    
     if final_output_file:
         print(f"对接工作流成功完成: {final_output_file}")
-        # 将生成的最终结果文件复制到指定的output_file
-        shutil.copy(final_output_file, args.output_file)
-        logging.info(f"结果已成功复制到: {args.output_file}")
-        exit(0)
+        # 将生成的最终结果文件写入到指定的 output_file。
+        # 当磁盘空间不足时，copy 可能失败；此时尝试用 os.replace 直接移动文件（同盘 rename），避免额外空间占用。
+        try:
+            shutil.copy(final_output_file, args.output_file)
+            logging.info(f"结果已成功复制到: {args.output_file}")
+            exit(0)
+        except OSError as e:
+            if e.errno in (errno.ENOSPC, errno.EDQUOT):
+                try:
+                    os.replace(final_output_file, args.output_file)
+                    logging.warning(
+                        f"磁盘空间不足，已将结果文件从 {final_output_file} 直接移动为 {args.output_file}（未保留原文件）。"
+                    )
+                    exit(0)
+                except Exception:
+                    raise
+            raise
     else:
         logging.error("对接流程失败，未生成有效的输出文件。")        
         Path(args.output_file).touch()
